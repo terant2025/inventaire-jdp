@@ -445,8 +445,7 @@ main.panel-open{margin-right:var(--panel-w)}
 import { initializeApp }   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getFirestore, collection, doc, setDoc, onSnapshot, writeBatch, getDocs }
                            from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-import { getStorage, ref as sRef, uploadBytesResumable, getDownloadURL }
-                           from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js';
+// Storage non utilisé — images stockées en base64 dans Firestore
 
 // ── CONFIG FIREBASE ───────────────────────────────────────────
 const firebaseConfig = {
@@ -460,7 +459,6 @@ const firebaseConfig = {
 
 const app     = initializeApp(firebaseConfig);
 const fdb     = getFirestore(app);
-const storage = getStorage(app);
 
 // ── STATE ─────────────────────────────────────────────────────
 let oeuvres  = [];
@@ -482,9 +480,8 @@ function setSyncState(s){
 
 // ── FIRESTORE HELPERS ─────────────────────────────────────────
 async function fsSetOeuvre(o){
-  const {id,imgUrl,...data}=o;
-  if(imgUrl&&imgUrl.startsWith('http')) data.imgUrl=imgUrl;
-  else if(!imgUrl) data.imgUrl='';
+  const {id,...data}=o;
+  // Stocker l'imgUrl directement (base64 ou URL) — Firestore accepte jusqu'à 1Mo par doc
   await setDoc(doc(fdb,'oeuvres',id),data);
 }
 async function fsSetSeriesConfig(){
@@ -691,36 +688,44 @@ window.panelNav=dir=>{
   panelIdx=n;isDirty=false;editBuf={...filtered[n]};fillPanel();render();
 };
 
-// ── IMAGE UPLOAD ──────────────────────────────────────────────
+// ── IMAGE UPLOAD (base64 → Firestore) ────────────────────────
 window.triggerImageUpload=()=>document.getElementById('img-upload-input').click();
 
 window.handleImageUpload=async input=>{
   const file=input.files[0];if(!file)return;
   const prog=document.getElementById('upload-progress');
-  const bar=document.getElementById('upload-bar');
   const label=document.getElementById('upload-label');
-  prog.classList.add('show');
+  prog.classList.add('show');label.textContent='Conversion…';
   try{
-    const ext=file.type==='image/png'?'png':'jpg';
-    const ref=sRef(storage,`oeuvres/${editBuf.id}.${ext}`);
-    const task=uploadBytesResumable(ref,file);
-    await new Promise((res,rej)=>{
-      task.on('state_changed',
-        s=>{const p=Math.round(s.bytesTransferred/s.totalBytes*100);bar.style.width=p+'%';label.textContent=`Envoi… ${p}%`;},
-        rej,
-        async()=>{const url=await getDownloadURL(task.snapshot.ref);res(url);}
-      );
-    }).then(url=>{
-      editBuf.imgUrl=url;
-      const wrap=document.getElementById('p-img-wrap');
-      const btn=wrap.querySelector('.panel-upload-btn');
-      wrap.innerHTML=`<img src="${url}" alt="">`;if(btn)wrap.appendChild(btn);
-      markDirty('imgUrl',url);toast('✓ Image uploadée');
-    });
-  }catch(e){toast('Erreur upload: '+e.message,true);}
-  prog.classList.remove('show');bar.style.width='0%';
+    // Redimensionner à 300px max via canvas avant stockage
+    const dataUrl = await resizeImage(file, 300);
+    editBuf.imgUrl=dataUrl;
+    const wrap=document.getElementById('p-img-wrap');
+    const btn=wrap.querySelector('.panel-upload-btn');
+    wrap.innerHTML=`<img src="${dataUrl}" alt="">`;if(btn)wrap.appendChild(btn);
+    markDirty('imgUrl',dataUrl);
+    toast('✓ Image prête — cliquer Enregistrer pour sauvegarder');
+  }catch(e){toast('Erreur: '+e.message,true);}
+  prog.classList.remove('show');
   input.value='';
 };
+
+function resizeImage(file, maxW){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const ratio=Math.min(maxW/img.width,1);
+      const w=Math.round(img.width*ratio),h=Math.round(img.height*ratio);
+      const canvas=document.createElement('canvas');
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      res(canvas.toDataURL('image/jpeg',0.82));
+    };
+    img.onerror=rej;img.src=url;
+  });
+}
 
 // ── IMPORT ────────────────────────────────────────────────────
 window.openImportModal=()=>document.getElementById('modal-import').classList.add('open');
@@ -747,39 +752,30 @@ async function importJSON(text){
   const bar=document.getElementById('import-bar');
   const label=document.getElementById('import-label');
   progWrap.style.display='block';setSyncState('saving');
-  let added=0,updated=0,uploads=0;
+  let added=0,updated=0;
 
-  for(let i=0;i<items.length;i++){
-    const item=items[i];
-    bar.style.width=Math.round((i/items.length)*100)+'%';
-    label.textContent=`Import ${i+1}/${items.length} — ${item.fichier||''}`;
-    const obj=normalizeItem(item);
-
-    // Upload base64 thumbnail → Storage
-    if(obj.imgUrl&&obj.imgUrl.startsWith('data:')){
-      try{
-        const ext=obj.imgUrl.startsWith('data:image/png')?'png':'jpg';
-        const bytes=Uint8Array.from(atob(obj.imgUrl.split(',')[1]),c=>c.charCodeAt(0));
-        const blob=new Blob([bytes],{type:`image/${ext}`});
-        const ref=sRef(storage,`oeuvres/${obj.id}.${ext}`);
-        const url=await new Promise((res,rej)=>{
-          const t=uploadBytesResumable(ref,blob);
-          t.on('state_changed',null,rej,async()=>res(await getDownloadURL(t.snapshot.ref)));
-        });
-        obj.imgUrl=url;uploads++;
-      }catch(e){obj.imgUrl='';}
-    }
-
-    if(obj.serie&&!series.includes(obj.serie)) series.push(obj.serie);
-    await fsSetOeuvre(obj);
-    const exists=oeuvres.find(o=>o.fichier===obj.fichier);
-    if(exists)updated++;else added++;
+  // Traitement par lots de 400 (limite Firestore batch = 500)
+  const BATCH=400;
+  for(let start=0;start<items.length;start+=BATCH){
+    const chunk=items.slice(start,start+BATCH);
+    const wb=writeBatch(fdb);
+    chunk.forEach((item,ci)=>{
+      bar.style.width=Math.round(((start+ci+1)/items.length)*100)+'%';
+      label.textContent=`Import ${start+ci+1}/${items.length} — ${item.fichier||''}`;
+      const obj=normalizeItem(item);
+      if(obj.serie&&!series.includes(obj.serie)) series.push(obj.serie);
+      const exists=oeuvres.find(o=>o.fichier===obj.fichier);
+      if(exists)updated++;else added++;
+      const{id,...data}=obj;
+      wb.set(doc(fdb,'oeuvres',id),data);
+    });
+    await wb.commit();
   }
 
   await fsSetSeriesConfig();
   setSyncState('saved');
   progWrap.style.display='none';bar.style.width='0%';
-  toast(`✓ ${added} ajoutées · ${updated} mises à jour · ${uploads} images uploadées`);
+  toast(`✓ ${added} ajoutées · ${updated} mises à jour`);
 }
 
 async function importCSVData(text){
