@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Inventaire — Julie de Pierrepont</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=Montserrat:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f7f5f2;--bg2:#eeebe6;--surface:#fff;
+  --border:#ddd9d3;--border2:#ccc8c1;
+  --text:#1a1916;--muted:#8a847a;--accent:#6b6158;
+  --gold:#b8913a;--gold-light:#e8d5a3;
+  --red:#c0392b;--green:#2d6a4f;--blue:#2c5f8a;--purple:#6b3fa0;
+  --serif:'Cormorant Garamond',Georgia,serif;
+  --sans:'Montserrat',sans-serif;
+  --panel-w:440px;--header-h:64px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12px;font-weight:300;letter-spacing:.03em;min-height:100vh}
+
+/* SYNC BAR */
+#sync-bar{position:fixed;top:0;left:0;right:0;height:3px;z-index:999;transition:background .3s}
+#sync-bar.saving{background:linear-gradient(90deg,transparent,var(--gold),transparent);animation:syncPulse 1s infinite}
+#sync-bar.saved{background:var(--green)}
+#sync-bar.error{background:var(--red)}
+@keyframes syncPulse{0%,100%{opacity:.4}50%{opacity:1}}
+
+/* LOADING */
+#loading-overlay{position:fixed;inset:0;background:var(--bg);z-index:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+.spinner{width:32px;height:32px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-txt{font-family:var(--serif);font-style:italic;font-size:16px;color:var(--muted)}
+
+/* HEADER */
+header{position:fixed;top:3px;left:0;right:0;z-index:200;height:var(--header-h);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 28px;gap:16px}
+.h-logo{font-family:var(--serif);font-size:17px;font-weight:300;letter-spacing:.12em;white-space:nowrap}
+.h-logo span{color:var(--gold);font-style:italic}
+.h-center{flex:1;max-width:440px}
+.search-wrap{position:relative}
+.search-wrap input{width:100%;padding:7px 12px 7px 34px;background:var(--bg);border:1px solid var(--border);font-family:var(--sans);font-size:11px;color:var(--text);outline:none;transition:border-color .2s}
+.search-wrap input:focus{border-color:var(--gold)}
+.search-wrap::before{content:'⌕';position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:15px}
+.h-right{display:flex;align-items:center;gap:6px}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border:1px solid var(--border2);background:var(--surface);font-family:var(--sans);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);cursor:pointer;transition:all .2s;white-space:nowrap}
+.btn:hover{background:var(--bg2);border-color:var(--accent);color:var(--text)}
+.btn-gold{background:var(--gold);border-color:var(--gold);color:#fff}
+.btn-gold:hover{background:#a07a2a;border-color:#a07a2a;color:#fff}
+.btn-sm{padding:5px 9px;font-size:9px}
+.btn:disabled{opacity:.4;pointer-events:none}
+
+/* TOOLBAR */
+.toolbar{position:fixed;top:calc(var(--header-h)+3px);left:0;right:0;z-index:190;background:var(--bg2);border-bottom:1px solid var(--border);padding:9px 28px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.filter-group{display:flex;align-items:center;gap:5px}
+.filter-label{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+select{padding:6px 26px 6px 9px;background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238a847a'/%3E%3C/svg%3E") no-repeat right 9px center;border:1px solid var(--border);font-family:var(--sans);font-size:11px;color:var(--text);appearance:none;cursor:pointer;outline:none}
+select:focus{border-color:var(--gold)}
+.toolbar-right{margin-left:auto;display:flex;align-items:center;gap:7px}
+.count-badge{font-size:9px;letter-spacing:.1em;color:var(--muted);padding:4px 9px;background:var(--surface);border:1px solid var(--border)}
+.view-toggle{display:flex;gap:2px}
+.view-btn{padding:6px 9px;background:var(--surface);border:1px solid var(--border);cursor:pointer;color:var(--muted);font-size:13px;transition:all .2s}
+.view-btn.active{background:var(--text);color:var(--surface);border-color:var(--text)}
+
+/* STATS */
+.stats-bar{position:fixed;top:calc(var(--header-h)+52px+3px);left:0;right:0;z-index:180;background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:24px;padding:12px 28px;overflow-x:auto}
+.stat{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+.stat-val{font-family:var(--serif);font-size:21px;font-weight:300;line-height:1}
+.stat-label{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.stat-sep{width:1px;background:var(--border);flex-shrink:0}
+
+/* MAIN */
+main{margin-top:calc(var(--header-h)+52px+50px+3px);padding:20px 28px;transition:margin-right .35s ease}
+main.panel-open{margin-right:var(--panel-w)}
+
+/* GRID */
+.grid-view{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:2px}
+.list-view{display:none;grid-template-columns:1fr;gap:1px}
+.grid-view.active,.list-view.active{display:grid}
+
+.card{position:relative;background:var(--surface);cursor:pointer;border:2px solid transparent;transition:border-color .2s;overflow:hidden}
+.card:hover{border-color:var(--gold)}
+.card.selected{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+.card-img{aspect-ratio:1;overflow:hidden;background:var(--bg2);display:flex;align-items:center;justify-content:center}
+.card-img img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .5s ease}
+.card:hover .card-img img{transform:scale(1.04)}
+.card-img-ph{font-size:28px;opacity:.2}
+.card-body{padding:9px 11px 11px}
+.card-serie{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-bottom:2px}
+.card-title{font-family:var(--serif);font-size:14px;font-weight:400;line-height:1.3;margin-bottom:5px}
+.card-title em{color:var(--muted);font-style:italic;font-size:12px}
+.card-meta{display:flex;justify-content:space-between;align-items:center}
+.card-year{font-size:9px;color:var(--muted);letter-spacing:.1em}
+.status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.card-edit-btn{position:absolute;top:7px;right:7px;background:rgba(255,255,255,.92);border:1px solid var(--border);width:27px;height:27px;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;transition:opacity .2s;font-size:12px;color:var(--accent)}
+.card:hover .card-edit-btn{opacity:1}
+
+/* LIST */
+.list-row{display:grid;grid-template-columns:54px 1fr 130px 110px 80px 130px 36px;background:var(--surface);border:2px solid transparent;align-items:center;transition:border-color .2s;cursor:pointer}
+.list-row:hover{border-color:var(--gold)}
+.list-row.selected{border-color:var(--gold)}
+.list-row>*{padding:9px 11px;border-right:1px solid var(--border);font-size:11px}
+.list-row>*:last-child{border-right:none}
+.list-thumb{width:54px;height:46px;object-fit:cover;display:block;padding:3px}
+.list-thumb-empty{width:54px;height:46px;background:var(--bg2);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:15px;padding:3px}
+.list-title{font-family:var(--serif);font-size:14px}
+.list-title small{display:block;font-family:var(--sans);font-size:9px;color:var(--muted);letter-spacing:.07em;margin-top:2px}
+.list-cell{color:var(--muted);font-size:10px}
+.list-status{display:flex;align-items:center;gap:5px}
+.list-edit{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px}
+
+.list-header{display:grid;grid-template-columns:54px 1fr 130px 110px 80px 130px 36px;background:var(--bg2);border:1px solid var(--border);margin-bottom:1px}
+.list-header>*{padding:7px 11px;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border-right:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:4px;user-select:none}
+.list-header>*:hover{color:var(--text)}
+.list-header>*:last-child{border-right:none}
+.sort-arrow{font-size:8px;opacity:.5}
+.sort-arrow.on{opacity:1;color:var(--gold)}
+
+/* STATUS */
+.s-disponible{background:#2d6a4f}.s-vendu{background:#c0392b}
+.s-expose{background:#2c5f8a}.s-collection{background:#6b3fa0}.s-inc{background:#8a847a}
+
+/* EMPTY */
+.empty-state{text-align:center;padding:80px 20px;color:var(--muted);grid-column:1/-1}
+.empty-state .icon{font-size:44px;margin-bottom:14px;opacity:.25}
+.empty-state p{font-family:var(--serif);font-style:italic;font-size:17px}
+
+/* PANEL */
+#panel{position:fixed;top:0;right:0;bottom:0;width:var(--panel-w);background:var(--surface);border-left:1px solid var(--border);z-index:300;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .35s ease;overflow:hidden}
+#panel.open{transform:translateX(0)}
+.panel-header{padding:18px 22px 14px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;flex-shrink:0}
+.panel-title{font-family:var(--serif);font-size:18px;font-weight:300;line-height:1.2}
+.panel-title small{display:block;font-family:var(--sans);font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-bottom:3px}
+.panel-close{background:none;border:none;font-size:18px;color:var(--muted);cursor:pointer;padding:4px;transition:color .2s;line-height:1;flex-shrink:0}
+.panel-close:hover{color:var(--text)}
+.panel-img-wrap{flex-shrink:0;background:var(--bg2);max-height:210px;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative}
+.panel-img-wrap img{width:100%;max-height:210px;object-fit:contain;display:block}
+.panel-img-empty{height:120px;display:flex;align-items:center;justify-content:center;font-size:36px;opacity:.12}
+.panel-upload-btn{position:absolute;bottom:8px;right:8px;background:rgba(255,255,255,.92);border:1px solid var(--border);padding:5px 10px;font-size:9px;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;color:var(--accent);font-family:var(--sans);transition:all .2s}
+.panel-upload-btn:hover{background:var(--gold);color:#fff;border-color:var(--gold)}
+.panel-nav{padding:9px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.panel-nav-info{font-size:10px;color:var(--muted);letter-spacing:.07em}
+.panel-body{flex:1;overflow-y:auto;padding:18px 22px;display:flex;flex-direction:column;gap:12px}
+.panel-body::-webkit-scrollbar{width:3px}
+.panel-body::-webkit-scrollbar-thumb{background:var(--border2)}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.field input,.field textarea,.field select{padding:7px 9px;background:var(--bg);border:1px solid var(--border);font-family:var(--sans);font-size:12px;color:var(--text);outline:none;transition:border-color .2s;width:100%;appearance:none}
+.field input:focus,.field textarea:focus{border-color:var(--gold)}
+.field select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238a847a'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 9px center;padding-right:26px;cursor:pointer}
+.field select:focus{border-color:var(--gold)}
+.field textarea{resize:vertical;min-height:64px;line-height:1.6}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.field-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px}
+.serie-field-wrap{display:flex;gap:5px;align-items:flex-end}
+.serie-field-wrap select{flex:1}
+.panel-footer{padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:7px;flex-shrink:0}
+.panel-sync-state{font-size:9px;color:var(--muted);display:flex;align-items:center;flex:1}
+
+/* UPLOAD PROGRESS */
+.upload-progress{display:none;padding:6px 22px;border-bottom:1px solid var(--border);flex-shrink:0}
+.upload-progress.show{display:block}
+.upload-bar-wrap{height:3px;background:var(--bg2);margin-top:5px;border-radius:2px}
+.upload-bar{height:3px;background:var(--gold);width:0%;transition:width .3s;border-radius:2px}
+.upload-label{font-size:9px;color:var(--muted);letter-spacing:.1em}
+
+/* MODALS */
+.modal-overlay{display:none;position:fixed;inset:0;z-index:500;background:rgba(26,25,22,.62);backdrop-filter:blur(4px);align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);width:520px;max-width:92vw;max-height:90vh;display:flex;flex-direction:column}
+.modal-header{padding:18px 22px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.modal-title{font-family:var(--serif);font-size:19px;font-weight:300}
+.modal-body{padding:22px;flex:1;overflow-y:auto}
+.modal-footer{padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:7px;justify-content:flex-end;flex-shrink:0}
+
+.drop-zone{border:2px dashed var(--border2);padding:36px 22px;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg);margin-bottom:14px}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--gold);background:var(--gold-light)}
+.drop-zone p{font-family:var(--serif);font-style:italic;color:var(--muted);font-size:15px;margin-top:7px}
+.drop-zone .dz-icon{font-size:30px;opacity:.35}
+
+/* SERIES MANAGER */
+.series-list{display:flex;flex-direction:column;gap:3px;margin-bottom:14px;max-height:260px;overflow-y:auto}
+.serie-item{display:flex;align-items:center;gap:7px;padding:7px 9px;background:var(--bg);border:1px solid var(--border)}
+.serie-handle{cursor:grab;color:var(--muted);font-size:13px;flex-shrink:0}
+.serie-name-input{flex:1;background:transparent;border:none;font-family:var(--sans);font-size:12px;color:var(--text);outline:none;padding:2px 0}
+.serie-name-input:focus{border-bottom:1px solid var(--gold)}
+.serie-count{font-size:9px;color:var(--muted);flex-shrink:0}
+.serie-del{background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;line-height:1;padding:2px 4px;transition:color .2s;flex-shrink:0}
+.serie-del:hover{color:var(--red)}
+.add-serie-row{display:flex;gap:7px}
+.add-serie-row input{flex:1;padding:6px 9px;background:var(--bg);border:1px solid var(--border);font-family:var(--sans);font-size:12px;color:var(--text);outline:none}
+.add-serie-row input:focus{border-color:var(--gold)}
+
+/* BATCH */
+.batch-thumb{width:100%;aspect-ratio:1;object-fit:cover;border:1px solid var(--border)}
+.batch-thumb-empty{width:100%;aspect-ratio:1;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:16px;border:1px solid var(--border)}
+
+/* TOAST */
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(14px);background:var(--text);color:var(--bg);padding:9px 18px;font-size:11px;letter-spacing:.09em;opacity:0;transition:all .28s;z-index:999;pointer-events:none;white-space:nowrap}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.err{background:var(--red)}
+
+@media(max-width:900px){
+  .list-row,.list-header{grid-template-columns:48px 1fr 80px 36px}
+  .list-row>*:nth-child(3),.list-row>*:nth-child(4),.list-row>*:nth-child(5),
+  .list-header>*:nth-child(3),.list-header>*:nth-child(4),.list-header>*:nth-child(5){display:none}
+  .h-right .btn:not(.btn-gold){display:none}
+}
+</style>
+</head>
+<body>
+
+<div id="sync-bar"></div>
+
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <p class="loading-txt">Chargement de l'inventaire…</p>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="h-logo">Inventaire <span>· Julie de Pierrepont</span></div>
+  <div class="h-center">
+    <div class="search-wrap">
+      <input type="text" id="search" placeholder="Rechercher une œuvre, série, technique…" oninput="applyFilters()">
+    </div>
+  </div>
+  <div class="h-right">
+    <button class="btn" onclick="openImportModal()">↑ Importer</button>
+    <button class="btn" onclick="openBatchModal()">⚡ En masse</button>
+    <button class="btn btn-gold" onclick="exportCSV()">↓ CSV</button>
+  </div>
+</header>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+  <div class="filter-group">
+    <span class="filter-label">Série</span>
+    <select id="f-serie" onchange="applyFilters()"><option value="">Toutes</option></select>
+  </div>
+  <div class="filter-group">
+    <span class="filter-label">Statut</span>
+    <select id="f-statut" onchange="applyFilters()">
+      <option value="">Tous</option>
+      <option value="disponible">Disponible</option>
+      <option value="vendu">Vendu</option>
+      <option value="expose">Exposé</option>
+      <option value="collection">Collection privée</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <span class="filter-label">Année</span>
+    <select id="f-annee" onchange="applyFilters()"><option value="">Toutes</option></select>
+  </div>
+  <div class="filter-group">
+    <span class="filter-label">Trier</span>
+    <select id="f-sort" onchange="applyFilters()">
+      <option value="serie">Série</option>
+      <option value="annee">Année</option>
+      <option value="titre">Titre</option>
+      <option value="statut">Statut</option>
+    </select>
+  </div>
+  <div class="toolbar-right">
+    <span class="count-badge" id="count-badge">—</span>
+    <div class="view-toggle">
+      <button class="view-btn active" id="btn-grid" onclick="setView('grid')">⊞</button>
+      <button class="view-btn" id="btn-list" onclick="setView('list')">☰</button>
+    </div>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="stats-bar">
+  <div class="stat"><span class="stat-val" id="s-total">—</span><span class="stat-label">Œuvres</span></div>
+  <div class="stat-sep"></div>
+  <div class="stat"><span class="stat-val" id="s-dispo" style="color:var(--green)">—</span><span class="stat-label">Disponibles</span></div>
+  <div class="stat-sep"></div>
+  <div class="stat"><span class="stat-val" id="s-vendu" style="color:var(--red)">—</span><span class="stat-label">Vendues</span></div>
+  <div class="stat-sep"></div>
+  <div class="stat"><span class="stat-val" id="s-expose" style="color:var(--blue)">—</span><span class="stat-label">Exposées</span></div>
+  <div class="stat-sep"></div>
+  <div class="stat"><span class="stat-val" id="s-coll" style="color:var(--purple)">—</span><span class="stat-label">Collections</span></div>
+  <div class="stat-sep"></div>
+  <div class="stat"><span class="stat-val" id="s-series">—</span><span class="stat-label">Séries</span></div>
+</div>
+
+<!-- MAIN -->
+<main id="main">
+  <div id="list-header-row" class="list-header" style="display:none">
+    <div></div>
+    <div onclick="sortBy('titre')">Titre <span class="sort-arrow" id="arr-titre"></span></div>
+    <div onclick="sortBy('technique')">Technique <span class="sort-arrow" id="arr-technique"></span></div>
+    <div onclick="sortBy('annee')">Dim. / Année <span class="sort-arrow" id="arr-annee"></span></div>
+    <div onclick="sortBy('annee')">Année</div>
+    <div onclick="sortBy('statut')">Statut <span class="sort-arrow" id="arr-statut"></span></div>
+    <div></div>
+  </div>
+  <div id="grid-container" class="grid-view active"></div>
+</main>
+
+<!-- PANEL -->
+<div id="panel">
+  <div class="panel-header">
+    <div class="panel-title"><small id="p-serie-label">Série</small><span id="p-titre">—</span></div>
+    <button class="panel-close" onclick="closePanel()">✕</button>
+  </div>
+  <div class="panel-img-wrap" id="p-img-wrap">
+    <div class="panel-img-empty">🖼</div>
+    <button class="panel-upload-btn" onclick="triggerImageUpload()">↑ Image</button>
+  </div>
+  <input type="file" id="img-upload-input" accept="image/*" style="display:none" onchange="handleImageUpload(this)">
+  <div class="upload-progress" id="upload-progress">
+    <div class="upload-label" id="upload-label">Envoi…</div>
+    <div class="upload-bar-wrap"><div class="upload-bar" id="upload-bar"></div></div>
+  </div>
+  <div class="panel-nav">
+    <button class="btn btn-sm" onclick="panelNav(-1)">← Préc.</button>
+    <span class="panel-nav-info" id="p-nav-info"></span>
+    <button class="btn btn-sm" onclick="panelNav(1)">Suiv. →</button>
+  </div>
+  <div class="panel-body">
+    <div class="field"><label>Titre de l'œuvre</label><input type="text" id="f-titre" oninput="markDirty('titre',this.value)"></div>
+    <div class="field">
+      <label>Série</label>
+      <div class="serie-field-wrap">
+        <select id="f-serie-edit" onchange="markDirty('serie',this.value)"></select>
+        <button class="btn btn-sm" onclick="openSeriesManager()" title="Gérer les séries">⚙</button>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Année</label><input type="text" id="f-annee-edit" placeholder="2019" oninput="markDirty('annee',this.value)"></div>
+      <div class="field"><label>Statut</label>
+        <select id="f-statut-edit" onchange="markDirty('statut',this.value)">
+          <option value="">—</option>
+          <option value="disponible">Disponible</option>
+          <option value="vendu">Vendu</option>
+          <option value="expose">Exposé</option>
+          <option value="collection">Collection privée</option>
+        </select>
+      </div>
+    </div>
+    <div class="field"><label>Technique / Matériaux</label><input type="text" id="f-technique" placeholder="Laine, soie, feutrage…" oninput="markDirty('technique',this.value)"></div>
+    <div class="field-row3">
+      <div class="field"><label>H (cm)</label><input type="text" id="f-hauteur" placeholder="H" oninput="markDirty('hauteur',this.value)"></div>
+      <div class="field"><label>L (cm)</label><input type="text" id="f-largeur" placeholder="L" oninput="markDirty('largeur',this.value)"></div>
+      <div class="field"><label>P (cm)</label><input type="text" id="f-profondeur" placeholder="P" oninput="markDirty('profondeur',this.value)"></div>
+    </div>
+    <div class="field"><label>Prix / Estimation (€)</label><input type="text" id="f-prix" placeholder="1200" oninput="markDirty('prix',this.value)"></div>
+    <div class="field"><label>Localisation</label><input type="text" id="f-localisation" placeholder="Atelier, Galerie…" oninput="markDirty('localisation',this.value)"></div>
+    <div class="field"><label>Notes</label><textarea id="f-notes" oninput="markDirty('notes',this.value)"></textarea></div>
+    <div class="field"><label>Dossier d'origine</label><input type="text" id="f-dossier" readonly style="color:var(--muted);font-size:10px;background:var(--bg2);font-family:monospace"></div>
+    <div class="field"><label>Fichier</label><input type="text" id="f-fichier" readonly style="color:var(--muted);font-size:10px;background:var(--bg2)"></div>
+  </div>
+  <div class="panel-footer">
+    <span class="panel-sync-state" id="panel-sync-state"></span>
+    <button class="btn" onclick="closePanel()">Fermer</button>
+    <button class="btn btn-gold" id="btn-save" onclick="savePanel()">✓ Enregistrer</button>
+  </div>
+</div>
+
+<!-- IMPORT MODAL -->
+<div class="modal-overlay" id="modal-import">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title">Importer JSON / CSV</span><button class="btn btn-sm panel-close" onclick="closeModal('modal-import')">✕</button></div>
+    <div class="modal-body">
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div class="dz-icon">📂</div>
+        <p>Glisser un fichier JSON ou CSV ici</p>
+        <p style="font-size:10px;margin-top:6px;color:var(--muted)">ou cliquer pour parcourir</p>
+      </div>
+      <input type="file" id="file-input" accept=".json,.csv" style="display:none" onchange="handleFileImport(this)">
+      <div id="import-progress" style="display:none;margin-top:12px">
+        <div class="upload-label" id="import-label">Import en cours…</div>
+        <div class="upload-bar-wrap" style="margin-top:6px"><div class="upload-bar" id="import-bar"></div></div>
+      </div>
+      <p style="font-size:10px;color:var(--muted);line-height:1.8;margin-top:14px">
+        <strong>JSON</strong> — généré par le script PowerShell (vignettes base64 → auto-uploadées vers Firebase Storage)<br>
+        <strong>CSV</strong> — inventaire enrichi dans Excel / Google Sheets<br>
+        Les données existantes sont fusionnées par nom de fichier.
+      </p>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('modal-import')">Fermer</button></div>
+  </div>
+</div>
+
+<!-- BATCH MODAL -->
+<div class="modal-overlay" id="modal-batch">
+  <div class="modal" style="width:520px">
+    <div class="modal-header"><span class="modal-title">⚡ Assignation en masse</span><button class="btn btn-sm panel-close" onclick="closeModal('modal-batch')">✕</button></div>
+    <div class="modal-body">
+      <p style="font-size:10px;color:var(--muted);margin-bottom:16px;line-height:1.8">Assignez une série à toutes les œuvres d'un dossier en un clic.</p>
+      <div class="field" style="margin-bottom:12px"><label>Dossier source</label><select id="batch-dossier" style="width:100%" onchange="updateBatchPreview()"><option value="">— Choisir —</option></select></div>
+      <div class="field" style="margin-bottom:12px"><label>Série à assigner</label>
+        <div class="serie-field-wrap">
+          <select id="batch-serie" onchange="updateBatchPreview()"><option value="">— Choisir —</option></select>
+          <input type="text" id="batch-serie-new" placeholder="Nouvelle série…" style="flex:1;padding:7px 9px;background:var(--bg);border:1px solid var(--border);font-family:var(--sans);font-size:12px;outline:none" oninput="updateBatchPreview()">
+        </div>
+      </div>
+      <div id="batch-preview" style="display:none;margin-top:14px">
+        <div style="font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:7px">Aperçu des œuvres concernées</div>
+        <div id="batch-preview-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:2px;max-height:180px;overflow-y:auto"></div>
+        <div id="batch-preview-count" style="margin-top:7px;font-size:10px;color:var(--muted)"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:12px;padding:9px 11px;background:var(--bg2);border:1px solid var(--border)">
+        <input type="checkbox" id="batch-overwrite" style="accent-color:var(--gold)" onchange="updateBatchPreview()">
+        <label for="batch-overwrite" style="font-size:10px;color:var(--muted);cursor:pointer">Écraser les œuvres qui ont déjà une série</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-batch')">Annuler</button>
+      <button class="btn btn-gold" id="batch-apply-btn" onclick="applyBatch()" disabled>Appliquer</button>
+    </div>
+  </div>
+</div>
+
+<!-- SERIES MANAGER -->
+<div class="modal-overlay" id="modal-series">
+  <div class="modal" style="width:440px">
+    <div class="modal-header"><span class="modal-title">Gérer les séries</span><button class="btn btn-sm panel-close" onclick="closeModal('modal-series')">✕</button></div>
+    <div class="modal-body">
+      <p style="font-size:10px;color:var(--muted);margin-bottom:14px;line-height:1.7">Renommer, réordonner (glisser-déposer) ou supprimer des séries.</p>
+      <div class="series-list" id="series-list"></div>
+      <div class="add-serie-row">
+        <input type="text" id="new-serie-input" placeholder="Nouvelle série…" onkeydown="if(event.key==='Enter')addSerie()">
+        <button class="btn btn-gold" onclick="addSerie()">+ Ajouter</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-series')">Annuler</button>
+      <button class="btn btn-gold" onclick="saveSeriesManager()">✓ Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- ══════════════════════════════════════════════════════
+     FIREBASE — accès public (pas d'authentification)
+══════════════════════════════════════════════════════ -->
+<script type="module">
+import { initializeApp }   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFirestore, collection, doc, setDoc, onSnapshot, writeBatch, getDocs }
+                           from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getStorage, ref as sRef, uploadBytesResumable, getDownloadURL }
+                           from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js';
+
+// ── CONFIG FIREBASE ───────────────────────────────────────────
+const firebaseConfig = {
+  apiKey:            "AIzaSyDw27kfc2K5N8_kXlbE3rYLu0KJRLu2lqE",
+  authDomain:        "inventaire-jdp.firebaseapp.com",
+  projectId:         "inventaire-jdp",
+  storageBucket:     "inventaire-jdp.firebasestorage.app",
+  messagingSenderId: "944682383871",
+  appId:             "1:944682383871:web:d91538cfbe3a339979cfca"
+};
+
+const app     = initializeApp(firebaseConfig);
+const fdb     = getFirestore(app);
+const storage = getStorage(app);
+
+// ── STATE ─────────────────────────────────────────────────────
+let oeuvres  = [];
+let series   = [];
+let filtered = [];
+let currentView = 'grid';
+let panelIdx = -1;
+let editBuf  = {};
+let isDirty  = false;
+let sortField = 'serie', sortDir = 1;
+let seriesEditing = [];
+
+// ── SYNC INDICATOR ────────────────────────────────────────────
+const syncBar = document.getElementById('sync-bar');
+function setSyncState(s){
+  syncBar.className=s;
+  if(s==='saved') setTimeout(()=>{if(syncBar.className==='saved')syncBar.className='';},2200);
+}
+
+// ── FIRESTORE HELPERS ─────────────────────────────────────────
+async function fsSetOeuvre(o){
+  const {id,imgUrl,...data}=o;
+  if(imgUrl&&imgUrl.startsWith('http')) data.imgUrl=imgUrl;
+  else if(!imgUrl) data.imgUrl='';
+  await setDoc(doc(fdb,'oeuvres',id),data);
+}
+async function fsSetSeriesConfig(){
+  await setDoc(doc(fdb,'config','series'),{list:series});
+}
+
+// ── REALTIME LISTENER ────────────────────────────────────────
+function startSync(){
+  // Load series config
+  getDocs(collection(fdb,'config')).then(snap=>{
+    snap.docs.forEach(d=>{if(d.id==='series') series=d.data().list||[];});
+    // Then listen to oeuvres
+    onSnapshot(collection(fdb,'oeuvres'), snap=>{
+      oeuvres=snap.docs.map(d=>({id:d.id,...d.data()}));
+      document.getElementById('loading-overlay').style.display='none';
+      rebuildFilters();
+      applyFilters();
+      updateStats();
+    });
+  }).catch(err=>{
+    document.getElementById('loading-overlay').style.display='none';
+    toast('Erreur connexion Firebase: '+err.message, true);
+  });
+}
+
+startSync();
+
+// ── STATUS HELPERS ────────────────────────────────────────────
+const STATUS_COLOR={disponible:'s-disponible',vendu:'s-vendu',expose:'s-expose',collection:'s-collection'};
+const STATUS_LABEL={disponible:'Disponible',vendu:'Vendu',expose:'Exposé',collection:'Collection privée'};
+const sc=s=>STATUS_COLOR[s]||'s-inc';
+const sl=s=>STATUS_LABEL[s]||'—';
+const dimLabel=o=>{const p=[o.hauteur,o.largeur,o.profondeur].filter(Boolean);return p.length?p.join(' × ')+' cm':'—';};
+
+// ── FILTERS ──────────────────────────────────────────────────
+function rebuildFilters(){
+  const allS=[...series,...oeuvres.map(o=>o.serie).filter(s=>s&&!series.includes(s))];
+  const years=[...new Set(oeuvres.map(o=>o.annee).filter(Boolean))].sort((a,b)=>b-a);
+  const fsel=document.getElementById('f-serie'),cS=fsel.value;
+  const fann=document.getElementById('f-annee'),cA=fann.value;
+  fsel.innerHTML='<option value="">Toutes les séries</option>';
+  allS.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;fsel.appendChild(o);});
+  fsel.value=cS;
+  fann.innerHTML='<option value="">Toutes les années</option>';
+  years.forEach(y=>{const o=document.createElement('option');o.value=y;o.textContent=y;fann.appendChild(o);});
+  fann.value=cA;
+  const psel=document.getElementById('f-serie-edit'),pV=psel.value;
+  psel.innerHTML='<option value="">— Sans série —</option>';
+  allS.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;psel.appendChild(o);});
+  psel.value=pV;
+  const bsel=document.getElementById('batch-serie');
+  bsel.innerHTML='<option value="">— Choisir —</option>';
+  allS.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;bsel.appendChild(o);});
+}
+
+function applyFilters(){
+  const q=document.getElementById('search').value.toLowerCase().trim();
+  const serie=document.getElementById('f-serie').value;
+  const statut=document.getElementById('f-statut').value;
+  const annee=document.getElementById('f-annee').value;
+  const sort=document.getElementById('f-sort').value;
+  filtered=oeuvres.filter(o=>{
+    if(serie&&o.serie!==serie)return false;
+    if(statut&&o.statut!==statut)return false;
+    if(annee&&o.annee!==annee)return false;
+    if(q&&![o.titre,o.technique,o.serie,o.localisation,o.notes,o.fichier].join(' ').toLowerCase().includes(q))return false;
+    return true;
+  });
+  if(sort==='serie'){
+    filtered.sort((a,b)=>{
+      const ai=series.indexOf(a.serie),bi=series.indexOf(b.serie);
+      const ad=ai<0?999:ai,bd=bi<0?999:bi;
+      return ad!==bd?(ad-bd)*sortDir:(a.titre||'').localeCompare(b.titre||'');
+    });
+  } else {
+    filtered.sort((a,b)=>{const va=(a[sort]||'').toString().toLowerCase(),vb=(b[sort]||'').toString().toLowerCase();return va<vb?-sortDir:va>vb?sortDir:0;});
+  }
+  document.getElementById('count-badge').textContent=filtered.length+' œuvre'+(filtered.length>1?'s':'');
+  render();
+}
+
+window.sortBy=f=>{
+  if(sortField===f)sortDir*=-1;else{sortField=f;sortDir=1;}
+  document.querySelectorAll('.sort-arrow').forEach(el=>{el.textContent='';el.classList.remove('on');});
+  const a=document.getElementById('arr-'+f);if(a){a.textContent=sortDir>0?'↑':'↓';a.classList.add('on');}
+  document.getElementById('f-sort').value=f;applyFilters();
+};
+
+// ── RENDER ────────────────────────────────────────────────────
+function render(){
+  const c=document.getElementById('grid-container');c.innerHTML='';
+  if(!filtered.length){c.innerHTML='<div class="empty-state"><div class="icon">🧵</div><p>Aucune œuvre ne correspond aux filtres</p></div>';return;}
+  if(currentView==='grid'){
+    c.className='grid-view active';document.getElementById('list-header-row').style.display='none';
+    filtered.forEach((o,i)=>c.appendChild(makeCard(o,i)));
+  } else {
+    c.className='list-view active';document.getElementById('list-header-row').style.display='grid';
+    filtered.forEach((o,i)=>c.appendChild(makeRow(o,i)));
+  }
+}
+
+function makeCard(o,i){
+  const d=document.createElement('div');
+  d.className='card'+(panelIdx===i?' selected':'');
+  d.innerHTML=`<div class="card-img">${o.imgUrl?`<img src="${o.imgUrl}" loading="lazy" alt="">`:'<span class="card-img-ph">🖼</span>'}</div>
+    <div class="card-body">
+      <div class="card-serie">${o.serie||'—'}</div>
+      <div class="card-title">${o.titre||`<em>${o.fichier||'Sans titre'}</em>`}</div>
+      <div class="card-meta"><span class="card-year">${o.annee||'—'}</span>${o.statut?`<span class="status-dot ${sc(o.statut)}" title="${sl(o.statut)}"></span>`:''}</div>
+    </div>
+    <button class="card-edit-btn" onclick="event.stopPropagation();openPanel(${i})">✎</button>`;
+  d.addEventListener('click',()=>openPanel(i));return d;
+}
+
+function makeRow(o,i){
+  const d=document.createElement('div');
+  d.className='list-row'+(panelIdx===i?' selected':'');
+  d.innerHTML=`${o.imgUrl?`<img class="list-thumb" src="${o.imgUrl}" loading="lazy" alt="">`:'<div class="list-thumb-empty">🖼</div>'}
+    <div class="list-title">${o.titre||`<em>${o.fichier||'Sans titre'}</em>`}<small>${o.serie||'—'}</small></div>
+    <div class="list-cell">${o.technique||'—'}</div>
+    <div class="list-cell">${dimLabel(o)}</div>
+    <div class="list-cell">${o.annee||'—'}</div>
+    <div class="list-cell list-status">${o.statut?`<span class="status-dot ${sc(o.statut)}"></span>`:''} ${sl(o.statut)}</div>
+    <div class="list-edit">✎</div>`;
+  d.addEventListener('click',()=>openPanel(i));return d;
+}
+
+// ── STATS ─────────────────────────────────────────────────────
+function updateStats(){
+  document.getElementById('s-total').textContent=oeuvres.length;
+  document.getElementById('s-dispo').textContent=oeuvres.filter(o=>o.statut==='disponible').length;
+  document.getElementById('s-vendu').textContent=oeuvres.filter(o=>o.statut==='vendu').length;
+  document.getElementById('s-expose').textContent=oeuvres.filter(o=>o.statut==='expose').length;
+  document.getElementById('s-coll').textContent=oeuvres.filter(o=>o.statut==='collection').length;
+  document.getElementById('s-series').textContent=new Set(oeuvres.map(o=>o.serie).filter(Boolean)).size;
+}
+
+// ── VIEW ──────────────────────────────────────────────────────
+window.setView=v=>{
+  currentView=v;
+  document.getElementById('btn-grid').classList.toggle('active',v==='grid');
+  document.getElementById('btn-list').classList.toggle('active',v==='list');
+  render();
+};
+
+// ── PANEL ─────────────────────────────────────────────────────
+window.openPanel=i=>{
+  panelIdx=i;isDirty=false;editBuf={...filtered[i]};
+  fillPanel();
+  document.getElementById('panel').classList.add('open');
+  document.getElementById('main').classList.add('panel-open');
+  document.getElementById('panel-sync-state').textContent='';
+  render();
+};
+window.closePanel=()=>{
+  if(isDirty&&!confirm('Modifications non enregistrées. Quitter ?'))return;
+  document.getElementById('panel').classList.remove('open');
+  document.getElementById('main').classList.remove('panel-open');
+  panelIdx=-1;isDirty=false;render();
+};
+
+function fillPanel(){
+  const o=editBuf;
+  document.getElementById('p-serie-label').textContent=o.serie||'Série';
+  document.getElementById('p-titre').textContent=o.titre||o.fichier||'Sans titre';
+  document.getElementById('p-nav-info').textContent=(panelIdx+1)+' / '+filtered.length;
+  const wrap=document.getElementById('p-img-wrap');
+  const btn=wrap.querySelector('.panel-upload-btn');
+  wrap.innerHTML=o.imgUrl?`<img src="${o.imgUrl}" alt="">`:'<div class="panel-img-empty">🖼</div>';
+  if(btn)wrap.appendChild(btn);
+  else{const b=document.createElement('button');b.className='panel-upload-btn';b.textContent='↑ Image';b.onclick=triggerImageUpload;wrap.appendChild(b);}
+  const map={titre:'f-titre',serie:'f-serie-edit',annee:'f-annee-edit',statut:'f-statut-edit',technique:'f-technique',hauteur:'f-hauteur',largeur:'f-largeur',profondeur:'f-profondeur',prix:'f-prix',localisation:'f-localisation',notes:'f-notes',fichier:'f-fichier'};
+  Object.entries(map).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=o[k]||'';});
+  document.getElementById('f-dossier').value=o.dossier||o.chemin_rel||'';
+}
+
+window.markDirty=(f,v)=>{
+  editBuf[f]=v;isDirty=true;
+  document.getElementById('panel-sync-state').textContent='● Non enregistré';
+  if(f==='titre'||f==='serie'){
+    document.getElementById('p-titre').textContent=editBuf.titre||editBuf.fichier||'Sans titre';
+    document.getElementById('p-serie-label').textContent=editBuf.serie||'Série';
+  }
+};
+
+window.savePanel=async()=>{
+  document.getElementById('btn-save').disabled=true;
+  document.getElementById('panel-sync-state').textContent='Enregistrement…';
+  setSyncState('saving');
+  try{
+    if(editBuf.serie&&!series.includes(editBuf.serie)){series.push(editBuf.serie);await fsSetSeriesConfig();}
+    await fsSetOeuvre(editBuf);
+    isDirty=false;setSyncState('saved');
+    document.getElementById('panel-sync-state').textContent='✓ Enregistré';
+    setTimeout(()=>document.getElementById('panel-sync-state').textContent='',2200);
+    rebuildFilters();
+  }catch(e){setSyncState('error');toast('Erreur: '+e.message,true);}
+  document.getElementById('btn-save').disabled=false;
+};
+
+window.panelNav=dir=>{
+  if(isDirty&&!confirm('Modifications non enregistrées. Continuer ?'))return;
+  const n=panelIdx+dir;if(n<0||n>=filtered.length)return;
+  panelIdx=n;isDirty=false;editBuf={...filtered[n]};fillPanel();render();
+};
+
+// ── IMAGE UPLOAD ──────────────────────────────────────────────
+window.triggerImageUpload=()=>document.getElementById('img-upload-input').click();
+
+window.handleImageUpload=async input=>{
+  const file=input.files[0];if(!file)return;
+  const prog=document.getElementById('upload-progress');
+  const bar=document.getElementById('upload-bar');
+  const label=document.getElementById('upload-label');
+  prog.classList.add('show');
+  try{
+    const ext=file.type==='image/png'?'png':'jpg';
+    const ref=sRef(storage,`oeuvres/${editBuf.id}.${ext}`);
+    const task=uploadBytesResumable(ref,file);
+    await new Promise((res,rej)=>{
+      task.on('state_changed',
+        s=>{const p=Math.round(s.bytesTransferred/s.totalBytes*100);bar.style.width=p+'%';label.textContent=`Envoi… ${p}%`;},
+        rej,
+        async()=>{const url=await getDownloadURL(task.snapshot.ref);res(url);}
+      );
+    }).then(url=>{
+      editBuf.imgUrl=url;
+      const wrap=document.getElementById('p-img-wrap');
+      const btn=wrap.querySelector('.panel-upload-btn');
+      wrap.innerHTML=`<img src="${url}" alt="">`;if(btn)wrap.appendChild(btn);
+      markDirty('imgUrl',url);toast('✓ Image uploadée');
+    });
+  }catch(e){toast('Erreur upload: '+e.message,true);}
+  prog.classList.remove('show');bar.style.width='0%';
+  input.value='';
+};
+
+// ── IMPORT ────────────────────────────────────────────────────
+window.openImportModal=()=>document.getElementById('modal-import').classList.add('open');
+window.closeModal=id=>document.getElementById(id).classList.remove('open');
+
+window.handleFileImport=async input=>{
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    try{
+      if(file.name.endsWith('.json'))await importJSON(e.target.result);
+      else await importCSVData(e.target.result);
+      closeModal('modal-import');
+    }catch(err){toast('Erreur import: '+err.message,true);}
+  };
+  reader.readAsText(file,'UTF-8');
+  input.value='';
+};
+
+async function importJSON(text){
+  const arr=JSON.parse(text);
+  const items=Array.isArray(arr)?arr:(arr.items||[]);
+  const progWrap=document.getElementById('import-progress');
+  const bar=document.getElementById('import-bar');
+  const label=document.getElementById('import-label');
+  progWrap.style.display='block';setSyncState('saving');
+  let added=0,updated=0,uploads=0;
+
+  for(let i=0;i<items.length;i++){
+    const item=items[i];
+    bar.style.width=Math.round((i/items.length)*100)+'%';
+    label.textContent=`Import ${i+1}/${items.length} — ${item.fichier||''}`;
+    const obj=normalizeItem(item);
+
+    // Upload base64 thumbnail → Storage
+    if(obj.imgUrl&&obj.imgUrl.startsWith('data:')){
+      try{
+        const ext=obj.imgUrl.startsWith('data:image/png')?'png':'jpg';
+        const bytes=Uint8Array.from(atob(obj.imgUrl.split(',')[1]),c=>c.charCodeAt(0));
+        const blob=new Blob([bytes],{type:`image/${ext}`});
+        const ref=sRef(storage,`oeuvres/${obj.id}.${ext}`);
+        const url=await new Promise((res,rej)=>{
+          const t=uploadBytesResumable(ref,blob);
+          t.on('state_changed',null,rej,async()=>res(await getDownloadURL(t.snapshot.ref)));
+        });
+        obj.imgUrl=url;uploads++;
+      }catch(e){obj.imgUrl='';}
+    }
+
+    if(obj.serie&&!series.includes(obj.serie)) series.push(obj.serie);
+    await fsSetOeuvre(obj);
+    const exists=oeuvres.find(o=>o.fichier===obj.fichier);
+    if(exists)updated++;else added++;
+  }
+
+  await fsSetSeriesConfig();
+  setSyncState('saved');
+  progWrap.style.display='none';bar.style.width='0%';
+  toast(`✓ ${added} ajoutées · ${updated} mises à jour · ${uploads} images uploadées`);
+}
+
+async function importCSVData(text){
+  const bom=text.charCodeAt(0)===0xFEFF;
+  const lines=(bom?text.slice(1):text).split(/\r?\n/).filter(Boolean);
+  const headers=parseCSVLine(lines[0]);
+  setSyncState('saving');
+  let added=0,updated=0;
+  const batch=writeBatch(fdb);
+
+  for(let i=1;i<lines.length;i++){
+    const vals=parseCSVLine(lines[i]);if(vals.length<2)continue;
+    const obj={};headers.forEach((h,j)=>obj[h]=vals[j]||'');
+    if(!obj.id)obj.id='csv_'+Math.random().toString(36).slice(2);
+    if(obj.serie&&!series.includes(obj.serie))series.push(obj.serie);
+    const existing=oeuvres.find(o=>o.fichier===obj.fichier);
+    const merged={...(existing||{}),...obj};
+    if(existing?.imgUrl&&!obj.imgUrl)merged.imgUrl=existing.imgUrl;
+    const{id,...data}=merged;
+    batch.set(doc(fdb,'oeuvres',id),data);
+    if(existing)updated++;else added++;
+  }
+
+  await batch.commit();
+  await fsSetSeriesConfig();
+  setSyncState('saved');
+  toast(`✓ CSV: ${added} ajoutées · ${updated} mises à jour`);
+}
+
+function normalizeItem(item){
+  return {
+    id:          item.id||'img_'+Math.random().toString(36).slice(2),
+    fichier:     item.fichier||item.Name||item.name||'',
+    serie:       item.serie||item.Serie||'',
+    dossier:     item.dossier||'',
+    chemin_rel:  item.chemin_rel||'',
+    titre:       item.titre||'',
+    annee:       item.annee||item.date_fichier?.slice(0,4)||'',
+    technique:   item.technique||'',
+    hauteur:     item.hauteur||'',
+    largeur:     item.largeur||'',
+    profondeur:  item.profondeur||'',
+    prix:        item.prix||'',
+    statut:      item.statut||'',
+    localisation:item.localisation||'',
+    notes:       item.notes||'',
+    imgUrl:      item.imgUrl||'',
+  };
+}
+
+function parseCSVLine(line){
+  const r=[];let c='',q=false;
+  for(let i=0;i<line.length;i++){
+    if(line[i]==='"'){if(q&&line[i+1]==='"'){c+='"';i++;}else q=!q;}
+    else if(line[i]===','&&!q){r.push(c);c='';}else c+=line[i];
+  }
+  r.push(c);return r;
+}
+
+// ── EXPORT CSV ────────────────────────────────────────────────
+window.exportCSV=()=>{
+  const cols=['id','fichier','dossier','serie','titre','annee','technique','hauteur','largeur','profondeur','prix','statut','localisation','notes'];
+  const csv='\uFEFF'+[cols.join(','),...oeuvres.map(o=>cols.map(c=>`"${(o[c]||'').toString().replace(/"/g,'""')}"`).join(','))].join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='inventaire-jdp.csv';a.click();
+  toast('✓ CSV exporté — '+oeuvres.length+' œuvres');
+};
+
+// ── BATCH ASSIGN ──────────────────────────────────────────────
+window.openBatchModal=()=>{
+  const dossiers=[...new Set(oeuvres.map(o=>o.dossier||'(racine)').filter(Boolean))].sort();
+  const sel=document.getElementById('batch-dossier');
+  sel.innerHTML='<option value="">— Choisir —</option>';
+  dossiers.forEach(d=>{
+    const tot=oeuvres.filter(o=>(o.dossier||'(racine)')===d).length;
+    const ns=oeuvres.filter(o=>(o.dossier||'(racine)')===d&&!o.serie).length;
+    const o=document.createElement('option');o.value=d;o.textContent=`${d}  (${tot} img · ${ns} sans série)`;sel.appendChild(o);
+  });
+  document.getElementById('batch-preview').style.display='none';
+  document.getElementById('batch-apply-btn').disabled=true;
+  document.getElementById('batch-overwrite').checked=false;
+  document.getElementById('batch-serie-new').value='';
+  document.getElementById('modal-batch').classList.add('open');
+};
+
+window.updateBatchPreview=()=>{
+  const dossier=document.getElementById('batch-dossier').value;
+  const serieVal=document.getElementById('batch-serie').value||document.getElementById('batch-serie-new').value.trim();
+  const overwrite=document.getElementById('batch-overwrite').checked;
+  if(!dossier||!serieVal){document.getElementById('batch-preview').style.display='none';document.getElementById('batch-apply-btn').disabled=true;return;}
+  const matches=oeuvres.filter(o=>(o.dossier||'(racine)')===dossier&&(overwrite||!o.serie));
+  const list=document.getElementById('batch-preview-list');list.innerHTML='';
+  matches.slice(0,36).forEach(o=>{
+    if(o.imgUrl){const img=document.createElement('img');img.className='batch-thumb';img.src=o.imgUrl;img.title=o.fichier;list.appendChild(img);}
+    else{const div=document.createElement('div');div.className='batch-thumb-empty';div.textContent='🖼';list.appendChild(div);}
+  });
+  if(matches.length>36){const m=document.createElement('div');m.style.cssText='grid-column:1/-1;font-size:10px;color:var(--muted);padding:6px 0';m.textContent=`… et ${matches.length-36} autres`;list.appendChild(m);}
+  document.getElementById('batch-preview-count').textContent=`${matches.length} œuvre${matches.length>1?'s':''} seront assignées à « ${serieVal} »`;
+  document.getElementById('batch-preview').style.display='block';
+  document.getElementById('batch-apply-btn').disabled=!matches.length;
+};
+
+window.applyBatch=async()=>{
+  const dossier=document.getElementById('batch-dossier').value;
+  const serieVal=document.getElementById('batch-serie').value||document.getElementById('batch-serie-new').value.trim();
+  const overwrite=document.getElementById('batch-overwrite').checked;
+  if(!dossier||!serieVal)return;
+  if(!series.includes(serieVal))series.push(serieVal);
+  const toUpdate=oeuvres.filter(o=>(o.dossier||'(racine)')===dossier&&(overwrite||!o.serie));
+  setSyncState('saving');
+  const batch=writeBatch(fdb);
+  toUpdate.forEach(o=>batch.update(doc(fdb,'oeuvres',o.id),{serie:serieVal}));
+  await batch.commit();
+  await fsSetSeriesConfig();
+  setSyncState('saved');
+  closeModal('modal-batch');
+  toast(`✓ ${toUpdate.length} œuvres assignées à « ${serieVal} »`);
+};
+
+// ── SERIES MANAGER ────────────────────────────────────────────
+window.openSeriesManager=()=>{seriesEditing=[...series];renderSeriesList();document.getElementById('modal-series').classList.add('open');};
+
+function renderSeriesList(){
+  const list=document.getElementById('series-list');list.innerHTML='';
+  seriesEditing.forEach((s,i)=>{
+    const count=oeuvres.filter(o=>o.serie===s).length;
+    const div=document.createElement('div');div.className='serie-item';div.draggable=true;
+    div.innerHTML=`<span class="serie-handle">⠿</span><input class="serie-name-input" value="${s}" data-idx="${i}" onchange="seriesEditing[${i}]=this.value"><span class="serie-count">${count} œuvre${count>1?'s':''}</span><button class="serie-del" onclick="deleteSerie(${i})">✕</button>`;
+    div.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain',i);div.style.opacity='.4';});
+    div.addEventListener('dragend',()=>div.style.opacity='1');
+    div.addEventListener('dragover',e=>{e.preventDefault();div.style.background='var(--gold-light)';});
+    div.addEventListener('dragleave',()=>div.style.background='');
+    div.addEventListener('drop',e=>{
+      e.preventDefault();div.style.background='';
+      const from=parseInt(e.dataTransfer.getData('text/plain'));if(from===i)return;
+      const m=seriesEditing.splice(from,1)[0];seriesEditing.splice(i,0,m);renderSeriesList();
+    });
+    list.appendChild(div);
+  });
+}
+
+window.deleteSerie=i=>{
+  const name=seriesEditing[i];const count=oeuvres.filter(o=>o.serie===name).length;
+  if(count>0&&!confirm(`"${name}" contient ${count} œuvre(s). Supprimer ?`))return;
+  seriesEditing.splice(i,1);renderSeriesList();
+};
+
+window.addSerie=()=>{
+  const inp=document.getElementById('new-serie-input');const val=inp.value.trim();
+  if(!val)return;if(seriesEditing.includes(val)){toast('Série déjà existante');return;}
+  seriesEditing.push(val);inp.value='';renderSeriesList();
+};
+
+window.saveSeriesManager=async()=>{
+  document.querySelectorAll('#series-list .serie-name-input').forEach(inp=>{
+    const i=parseInt(inp.dataset.idx);seriesEditing[i]=inp.value.trim()||seriesEditing[i];
+  });
+  const oldSeries=[...series];
+  const batch=writeBatch(fdb);
+  oldSeries.forEach((oldName,i)=>{
+    const newName=seriesEditing[i];
+    if(newName&&newName!==oldName){oeuvres.filter(o=>o.serie===oldName).forEach(o=>batch.update(doc(fdb,'oeuvres',o.id),{serie:newName}));}
+  });
+  await batch.commit();
+  series=seriesEditing.filter(Boolean);
+  await fsSetSeriesConfig();
+  closeModal('modal-series');
+  toast('✓ Séries enregistrées');
+};
+
+// ── DROP ZONE ─────────────────────────────────────────────────
+const dz=document.getElementById('drop-zone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop',e=>{
+  e.preventDefault();dz.classList.remove('drag-over');
+  const file=e.dataTransfer.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=async ev=>{
+    try{if(file.name.endsWith('.json'))await importJSON(ev.target.result);else await importCSVData(ev.target.result);closeModal('modal-import');}
+    catch(err){toast('Erreur: '+err.message,true);}
+  };
+  reader.readAsText(file,'UTF-8');
+});
+
+// ── TOAST ─────────────────────────────────────────────────────
+function toast(msg,err=false){
+  const t=document.getElementById('toast');t.textContent=msg;
+  t.className=err?'show err':'show';
+  clearTimeout(t._t);t._t=setTimeout(()=>t.className='',3200);
+}
+
+// ── KEYBOARD ──────────────────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  if(!document.getElementById('panel').classList.contains('open'))return;
+  if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName))return;
+  if(e.key==='ArrowRight'||e.key==='ArrowDown')panelNav(1);
+  else if(e.key==='ArrowLeft'||e.key==='ArrowUp')panelNav(-1);
+  else if(e.key==='Escape')closePanel();
+});
+
+</script>
+</body>
+</html>
