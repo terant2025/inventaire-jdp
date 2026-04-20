@@ -167,6 +167,17 @@ main.panel-open{margin-right:var(--panel-w)}
 .upload-bar{height:3px;background:var(--gold);width:0%;transition:width .3s;border-radius:2px}
 .upload-label{font-size:9px;color:var(--muted);letter-spacing:.1em}
 
+/* PANEL IMAGE DROP ZONE */
+.panel-img-wrap{position:relative;transition:background .2s}
+.panel-img-wrap.drag-over{background:var(--gold-light)!important;outline:2px dashed var(--gold);outline-offset:-4px}
+.panel-img-wrap.drag-over::after{content:'Déposer les photos ici';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-style:italic;font-size:14px;color:var(--gold);pointer-events:none}
+.panel-img-weight{position:absolute;bottom:8px;left:8px;background:rgba(26,25,22,.65);color:#fff;font-size:8px;letter-spacing:.1em;padding:3px 7px;pointer-events:none;backdrop-filter:blur(3px)}
+.upload-multi-progress{display:none;padding:8px 22px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2)}
+.upload-multi-progress.show{display:flex;flex-direction:column;gap:5px}
+.upload-multi-label{font-size:9px;color:var(--muted);letter-spacing:.1em;display:flex;justify-content:space-between}
+.upload-multi-bar-wrap{height:3px;background:var(--border);border-radius:2px}
+.upload-multi-bar{height:3px;background:var(--gold);width:0%;transition:width .2s;border-radius:2px}
+
 /* MODALS */
 .modal-overlay{display:none;position:fixed;inset:0;z-index:500;background:rgba(26,25,22,.62);backdrop-filter:blur(4px);align-items:center;justify-content:center}
 .modal-overlay.open{display:flex}
@@ -309,14 +320,21 @@ main.panel-open{margin-right:var(--panel-w)}
     <div class="panel-title"><small id="p-serie-label">Série</small><span id="p-titre">—</span></div>
     <button class="panel-close" onclick="closePanel()">✕</button>
   </div>
-  <div class="panel-img-wrap" id="p-img-wrap">
+  <div class="panel-img-wrap" id="p-img-wrap"
+       onclick="triggerImageUpload()"
+       ondragover="event.preventDefault();this.classList.add('drag-over')"
+       ondragleave="this.classList.remove('drag-over')"
+       ondrop="handleImgDrop(event)">
     <div class="panel-img-empty">🖼</div>
-    <button class="panel-upload-btn" onclick="triggerImageUpload()">↑ Image</button>
+    <button class="panel-upload-btn" onclick="event.stopPropagation();triggerImageUpload()">↑ Image</button>
   </div>
-  <input type="file" id="img-upload-input" accept="image/*" style="display:none" onchange="handleImageUpload(this)">
-  <div class="upload-progress" id="upload-progress">
-    <div class="upload-label" id="upload-label">Envoi…</div>
-    <div class="upload-bar-wrap"><div class="upload-bar" id="upload-bar"></div></div>
+  <input type="file" id="img-upload-input" accept="image/*" multiple style="display:none" onchange="handleImageUpload(this)">
+  <div class="upload-multi-progress" id="upload-multi-progress">
+    <div class="upload-multi-label">
+      <span id="upload-multi-label-txt">Traitement…</span>
+      <span id="upload-multi-weight"></span>
+    </div>
+    <div class="upload-multi-bar-wrap"><div class="upload-multi-bar" id="upload-multi-bar"></div></div>
   </div>
   <div class="panel-nav">
     <button class="btn btn-sm" onclick="panelNav(-1)">← Préc.</button>
@@ -393,9 +411,9 @@ main.panel-open{margin-right:var(--panel-w)}
         <div class="upload-bar-wrap" style="margin-top:6px"><div class="upload-bar" id="import-bar"></div></div>
       </div>
       <p style="font-size:10px;color:var(--muted);line-height:1.8;margin-top:14px">
-        <strong>JSON</strong> — généré par le script PowerShell (vignettes base64 → auto-uploadées vers Firebase Storage)<br>
+        <strong>JSON</strong> — généré par le script PowerShell (métadonnées sans images)<br>
         <strong>CSV</strong> — inventaire enrichi dans Excel / Google Sheets<br>
-        Les données existantes sont fusionnées par nom de fichier.
+        Les données existantes sont fusionnées par nom de fichier. Les images sont à ajouter manuellement via le panel (glisser-déposer, jusqu'à plusieurs d'un coup).
       </p>
     </div>
     <div class="modal-footer"><button class="btn" onclick="closeModal('modal-import')">Fermer</button></div>
@@ -536,7 +554,7 @@ function setSyncState(s){
 // ── FIRESTORE HELPERS ─────────────────────────────────────────
 async function fsSetOeuvre(o){
   const {id,...data}=o;
-  // Stocker l'imgUrl directement (base64 ou URL) — Firestore accepte jusqu'à 1Mo par doc
+  // imgUrl = base64 JPEG 1200px (~150–500 Ko) — limite Firestore 1 Mo/doc
   await setDoc(doc(fdb,'oeuvres',id),data);
 }
 async function fsSetSeriesConfig(){
@@ -705,9 +723,16 @@ function fillPanel(){
   document.getElementById('p-nav-info').textContent=(panelIdx+1)+' / '+filtered.length;
   const wrap=document.getElementById('p-img-wrap');
   const btn=wrap.querySelector('.panel-upload-btn');
-  wrap.innerHTML=o.imgUrl?`<img src="${o.imgUrl}" alt="">`:'<div class="panel-img-empty">🖼</div>';
+  if(o.imgUrl){
+    const kb=Math.round(o.imgUrl.length*0.75/1024);
+    wrap.innerHTML=`<img src="${o.imgUrl}" alt="" style="cursor:pointer">`;
+    const badge=document.createElement('span');badge.className='panel-img-weight';badge.textContent=`${kb} Ko`;
+    wrap.appendChild(badge);
+  } else {
+    wrap.innerHTML='<div class="panel-img-empty">🖼</div>';
+  }
   if(btn)wrap.appendChild(btn);
-  else{const b=document.createElement('button');b.className='panel-upload-btn';b.textContent='↑ Image';b.onclick=triggerImageUpload;wrap.appendChild(b);}
+  else{const b=document.createElement('button');b.className='panel-upload-btn';b.textContent='↑ Image';b.onclick=e=>{e.stopPropagation();triggerImageUpload();};wrap.appendChild(b);}
   const map={titre:'f-titre',serie:'f-serie-edit',annee:'f-annee-edit',statut:'f-statut-edit',technique:'f-technique',hauteur:'f-hauteur',largeur:'f-largeur',profondeur:'f-profondeur',prix:'f-prix',localisation:'f-localisation',notes:'f-notes',fichier:'f-fichier'};
   Object.entries(map).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=o[k]||'';});
   document.getElementById('f-dossier').value=o.dossier||o.chemin_rel||'';
@@ -751,43 +776,184 @@ window.panelNav=dir=>{
   panelIdx=n;isDirty=false;editBuf={...filtered[n]};fillPanel();render();
 };
 
-// ── IMAGE UPLOAD (base64 → Firestore) ────────────────────────
+// ── IMAGE UPLOAD (base64 1200px → Firestore) ─────────────────
 window.triggerImageUpload=()=>document.getElementById('img-upload-input').click();
 
+// Drop directly onto panel image zone
+window.handleImgDrop=async e=>{
+  e.preventDefault();
+  document.getElementById('p-img-wrap').classList.remove('drag-over');
+  const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'));
+  if(!files.length)return;
+  await processImageFiles(files);
+};
+
 window.handleImageUpload=async input=>{
-  const file=input.files[0];if(!file)return;
-  const prog=document.getElementById('upload-progress');
-  const label=document.getElementById('upload-label');
-  prog.classList.add('show');label.textContent='Conversion…';
-  try{
-    // Redimensionner à 300px max via canvas avant stockage
-    const dataUrl = await resizeImage(file, 300);
-    editBuf.imgUrl=dataUrl;
-    const wrap=document.getElementById('p-img-wrap');
-    const btn=wrap.querySelector('.panel-upload-btn');
-    wrap.innerHTML=`<img src="${dataUrl}" alt="">`;if(btn)wrap.appendChild(btn);
-    markDirty('imgUrl',dataUrl);
-    toast('✓ Image prête — cliquer Enregistrer pour sauvegarder');
-  }catch(e){toast('Erreur: '+e.message,true);}
-  prog.classList.remove('show');
+  const files=[...input.files];
+  if(!files.length)return;
+  await processImageFiles(files);
   input.value='';
 };
 
-function resizeImage(file, maxW){
+// ── CORE: process one or many image files ─────────────────────
+async function processImageFiles(files){
+  if(files.length===1){
+    await processSingleImage(files[0], /*applyToPanel=*/true);
+    return;
+  }
+  // Multiple files → 1st goes to current oeuvre, rest create new grouped vues
+  await processMultiImages(files);
+}
+
+async function processSingleImage(file, applyToPanel){
+  const prog=document.getElementById('upload-multi-progress');
+  const labelEl=document.getElementById('upload-multi-label-txt');
+  const weightEl=document.getElementById('upload-multi-weight');
+  const barEl=document.getElementById('upload-multi-bar');
+  prog.classList.add('show');
+  labelEl.textContent='Redimensionnement…';
+  barEl.style.width='30%';
+  weightEl.textContent='';
+  try{
+    const {dataUrl, kb} = await resizeImageSmart(file);
+    barEl.style.width='100%';
+    weightEl.textContent=`${kb} Ko`;
+    labelEl.textContent='✓ Prêt';
+
+    if(applyToPanel){
+      editBuf.imgUrl=dataUrl;
+      const wrap=document.getElementById('p-img-wrap');
+      rebuildPanelImg(wrap, dataUrl, kb);
+      markDirty('imgUrl', dataUrl);
+      toast(`✓ Image prête (${kb} Ko) — Enregistrer pour sauvegarder`);
+    }
+    setTimeout(()=>prog.classList.remove('show'),2000);
+    return dataUrl;
+  }catch(e){
+    prog.classList.remove('show');
+    toast('Erreur: '+e.message, true);
+    return null;
+  }
+}
+
+async function processMultiImages(files){
+  const prog=document.getElementById('upload-multi-progress');
+  const labelEl=document.getElementById('upload-multi-label-txt');
+  const weightEl=document.getElementById('upload-multi-weight');
+  const barEl=document.getElementById('upload-multi-bar');
+  prog.classList.add('show');
+
+  // Ensure the current oeuvre has a groupe name — use titre or fichier as default
+  let groupe = editBuf.groupe;
+  if(!groupe){
+    groupe = (editBuf.titre||editBuf.fichier||'groupe_'+Date.now()).replace(/\s+/g,'-').toLowerCase();
+    editBuf.groupe=groupe;
+    document.getElementById('f-groupe').value=groupe;
+    markDirty('groupe', groupe);
+  }
+
+  setSyncState('saving');
+  let totalKb=0;
+  const batch=writeBatch(fdb);
+
+  for(let i=0;i<files.length;i++){
+    const pct=Math.round(((i+0.5)/files.length)*100);
+    barEl.style.width=pct+'%';
+    labelEl.textContent=`Image ${i+1} / ${files.length} — ${files[i].name}`;
+    weightEl.textContent='';
+
+    const {dataUrl, kb} = await resizeImageSmart(files[i]);
+    totalKb+=kb;
+    weightEl.textContent=`~${totalKb} Ko total`;
+
+    if(i===0){
+      // First file → update current oeuvre in place
+      editBuf.imgUrl=dataUrl;
+      editBuf.groupePrincipal=true;
+      const wrap=document.getElementById('p-img-wrap');
+      rebuildPanelImg(wrap, dataUrl, kb);
+      markDirty('imgUrl', dataUrl);
+      markDirty('groupePrincipal', true);
+    } else {
+      // Extra files → create new sibling oeuvres in the same groupe
+      const newId='img_'+Math.random().toString(36).slice(2);
+      const sibling={
+        id:newId,
+        fichier: files[i].name,
+        dossier: editBuf.dossier||'',
+        serie:   editBuf.serie||'',
+        titre:   editBuf.titre||'',
+        annee:   editBuf.annee||'',
+        technique: editBuf.technique||'',
+        hauteur: editBuf.hauteur||'',
+        largeur: editBuf.largeur||'',
+        profondeur: editBuf.profondeur||'',
+        prix:    editBuf.prix||'',
+        statut:  editBuf.statut||'',
+        localisation: editBuf.localisation||'',
+        notes:   editBuf.notes||'',
+        groupe,
+        groupePrincipal: false,
+        imgUrl:  dataUrl,
+        imgHD:   '',
+        driveId: '',
+      };
+      const{id,...data}=sibling;
+      batch.set(doc(fdb,'oeuvres',newId), data);
+    }
+  }
+
+  await batch.commit();
+  setSyncState('saved');
+  barEl.style.width='100%';
+  labelEl.textContent=`✓ ${files.length} images traitées`;
+  weightEl.textContent=`~${totalKb} Ko total`;
+  toast(`✓ ${files.length} vues ajoutées au groupe « ${groupe} »`);
+  setTimeout(()=>prog.classList.remove('show'), 2500);
+}
+
+// ── RESIZE: 1200px / 0.82 — repli 900px / 0.70 si > 800 Ko ───
+async function resizeImageSmart(file){
+  let dataUrl = await resizeImage(file, 1200, 0.82);
+  let kb = Math.round(dataUrl.length * 0.75 / 1024); // base64 → bytes approx
+  if(kb > 800){
+    dataUrl = await resizeImage(file, 900, 0.70);
+    kb = Math.round(dataUrl.length * 0.75 / 1024);
+  }
+  return {dataUrl, kb};
+}
+
+function resizeImage(file, maxW, quality){
   return new Promise((res,rej)=>{
     const img=new Image();
     const url=URL.createObjectURL(file);
     img.onload=()=>{
-      const ratio=Math.min(maxW/img.width,1);
-      const w=Math.round(img.width*ratio),h=Math.round(img.height*ratio);
+      const ratio=Math.min(maxW/img.width, maxW/img.height, 1);
+      const w=Math.round(img.width*ratio), h=Math.round(img.height*ratio);
       const canvas=document.createElement('canvas');
-      canvas.width=w;canvas.height=h;
+      canvas.width=w; canvas.height=h;
       canvas.getContext('2d').drawImage(img,0,0,w,h);
       URL.revokeObjectURL(url);
-      res(canvas.toDataURL('image/jpeg',0.82));
+      res(canvas.toDataURL('image/jpeg', quality));
     };
-    img.onerror=rej;img.src=url;
+    img.onerror=rej; img.src=url;
   });
+}
+
+function rebuildPanelImg(wrap, dataUrl, kb){
+  const btn=wrap.querySelector('.panel-upload-btn');
+  wrap.innerHTML=`<img src="${dataUrl}" alt="" style="cursor:pointer">`;
+  const badge=document.createElement('span');
+  badge.className='panel-img-weight';
+  badge.textContent=`${kb} Ko`;
+  wrap.appendChild(badge);
+  if(btn)wrap.appendChild(btn);
+  else{
+    const b=document.createElement('button');
+    b.className='panel-upload-btn';b.textContent='↑ Image';
+    b.onclick=e=>{e.stopPropagation();triggerImageUpload();};
+    wrap.appendChild(b);
+  }
 }
 
 // ── IMPORT ────────────────────────────────────────────────────
