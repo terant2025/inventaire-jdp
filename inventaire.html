@@ -353,6 +353,20 @@ main.panel-open{margin-right:var(--panel-w)}
     <div class="field"><label>Prix / Estimation (€)</label><input type="text" id="f-prix" placeholder="1200" oninput="markDirty('prix',this.value)"></div>
     <div class="field"><label>Localisation</label><input type="text" id="f-localisation" placeholder="Atelier, Galerie…" oninput="markDirty('localisation',this.value)"></div>
     <div class="field"><label>Notes</label><textarea id="f-notes" oninput="markDirty('notes',this.value)"></textarea></div>
+    <div class="field" style="background:var(--bg2);padding:12px;border:1px solid var(--border)">
+      <label style="color:var(--gold);margin-bottom:8px;display:block">Groupe de vues</label>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="field">
+          <label>Nom du groupe <span style="color:var(--muted);font-size:8px">— même nom sur toutes les vues liées</span></label>
+          <input type="text" id="f-groupe" placeholder="ex: Matrice, Totem-I…" oninput="markDirty('groupe',this.value)" list="groupes-list">
+          <datalist id="groupes-list"></datalist>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:10px;color:var(--muted)">
+          <input type="checkbox" id="f-groupe-principal" style="accent-color:var(--gold)" onchange="markDirty('groupePrincipal',this.checked)">
+          Photo principale du groupe (affichée en vignette dans la galerie)
+        </label>
+      </div>
+    </div>
     <div class="field"><label>Dossier d'origine</label><input type="text" id="f-dossier" readonly style="color:var(--muted);font-size:10px;background:var(--bg2);font-family:monospace"></div>
     <div class="field"><label>Fichier</label><input type="text" id="f-fichier" readonly style="color:var(--muted);font-size:10px;background:var(--bg2)"></div>
   </div>
@@ -697,6 +711,14 @@ function fillPanel(){
   const map={titre:'f-titre',serie:'f-serie-edit',annee:'f-annee-edit',statut:'f-statut-edit',technique:'f-technique',hauteur:'f-hauteur',largeur:'f-largeur',profondeur:'f-profondeur',prix:'f-prix',localisation:'f-localisation',notes:'f-notes',fichier:'f-fichier'};
   Object.entries(map).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=o[k]||'';});
   document.getElementById('f-dossier').value=o.dossier||o.chemin_rel||'';
+  // Groupe
+  document.getElementById('f-groupe').value=o.groupe||'';
+  document.getElementById('f-groupe-principal').checked=o.groupePrincipal===true||o.groupePrincipal==='true';
+  // Populate datalist with existing group names
+  const dl=document.getElementById('groupes-list');
+  dl.innerHTML='';
+  const groupes=[...new Set(oeuvres.map(x=>x.groupe).filter(Boolean))].sort();
+  groupes.forEach(g=>{const opt=document.createElement('option');opt.value=g;dl.appendChild(opt);});
 }
 
 window.markDirty=(f,v)=>{
@@ -869,22 +891,26 @@ async function importCSVData(text){
 
 function normalizeItem(item){
   return {
-    id:          item.id||'img_'+Math.random().toString(36).slice(2),
-    fichier:     item.fichier||item.Name||item.name||'',
-    serie:       item.serie||item.Serie||'',
-    dossier:     item.dossier||'',
-    chemin_rel:  item.chemin_rel||'',
-    titre:       item.titre||'',
-    annee:       item.annee||item.date_fichier?.slice(0,4)||'',
-    technique:   item.technique||'',
-    hauteur:     item.hauteur||'',
-    largeur:     item.largeur||'',
-    profondeur:  item.profondeur||'',
-    prix:        item.prix||'',
-    statut:      item.statut||'',
-    localisation:item.localisation||'',
-    notes:       item.notes||'',
-    imgUrl:      item.imgUrl||'',
+    id:             item.id||'img_'+Math.random().toString(36).slice(2),
+    fichier:        item.fichier||item.Name||item.name||'',
+    serie:          item.serie||item.Serie||'',
+    dossier:        item.dossier||'',
+    chemin_rel:     item.chemin_rel||'',
+    titre:          item.titre||'',
+    annee:          item.annee||item.date_fichier?.slice(0,4)||'',
+    technique:      item.technique||'',
+    hauteur:        item.hauteur||'',
+    largeur:        item.largeur||'',
+    profondeur:     item.profondeur||'',
+    prix:           item.prix||'',
+    statut:         item.statut||'',
+    localisation:   item.localisation||'',
+    notes:          item.notes||'',
+    imgUrl:         item.imgUrl||'',
+    groupe:         item.groupe||'',
+    groupePrincipal:item.groupePrincipal||false,
+    imgHD:          item.imgHD||'',
+    driveId:        item.driveId||'',
   };
 }
 

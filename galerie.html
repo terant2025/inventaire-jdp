@@ -400,35 +400,54 @@ function applyFilters(){
 function render(){
   const gallery = document.getElementById('gallery');
   const empty   = document.getElementById('empty');
-  // Clear except empty div
   Array.from(gallery.children).forEach(c=>{ if(c!==empty) c.remove(); });
 
   if(!filtered.length){ empty.style.display='block'; return; }
   empty.style.display='none';
 
+  // Build groups map
+  const groupMap = {};
+  oeuvres.forEach(o=>{
+    if(o.groupe){ if(!groupMap[o.groupe])groupMap[o.groupe]=[]; groupMap[o.groupe].push(o); }
+  });
+
+  // Determine which oeuvres to show in grid
+  // For grouped: only show the principal (or first if none marked)
+  const shownIds = new Set();
+  const gridItems = filtered.filter(o=>{
+    if(!o.groupe) return true; // ungrouped: always show
+    const grp = groupMap[o.groupe]||[];
+    const principal = grp.find(x=>x.groupePrincipal) || grp[0];
+    if(o.id===principal?.id){
+      shownIds.add(o.groupe);
+      return true;
+    }
+    return false;
+  });
+
   if(currentView==='grid'){
     gallery.className='';
-    // Group by serie
     const groups={};
-    filtered.forEach(o=>{ const k=o.serie||'Sans série'; if(!groups[k])groups[k]=[]; groups[k].push(o); });
+    gridItems.forEach(o=>{ const k=o.serie||'Sans série'; if(!groups[k])groups[k]=[]; groups[k].push(o); });
     const orderedKeys=[...series,...Object.keys(groups).filter(k=>!series.includes(k))];
     orderedKeys.forEach(serie=>{
       if(!groups[serie]) return;
-      // Section header
       const hdr=document.createElement('div');
       hdr.className='serie-section-header';
       hdr.innerHTML=`<h2>${serie}</h2><span>${groups[serie].length} œuvre${groups[serie].length>1?'s':''}</span>`;
       gallery.appendChild(hdr);
       groups[serie].forEach(o=>{
-        const globalIdx=filtered.indexOf(o);
-        gallery.appendChild(makeCard(o,globalIdx,false));
+        const grpItems = o.groupe ? (groupMap[o.groupe]||[]) : null;
+        gallery.appendChild(makeCard(o, grpItems, false));
       });
     });
   } else {
     gallery.className='list-mode';
-    filtered.forEach((o,i)=>gallery.appendChild(makeCard(o,i,true)));
+    gridItems.forEach(o=>{
+      const grpItems = o.groupe ? (groupMap[o.groupe]||[]) : null;
+      gallery.appendChild(makeCard(o, grpItems, true));
+    });
   }
-  // Update lbItems
   lbItems=[...filtered];
 }
 
@@ -452,16 +471,18 @@ function dimLabel(o){
   return p.length ? p.join(' × ')+' cm' : '';
 }
 
-function makeCard(o,idx,isList){
+function makeCard(o, grpItems, isList){
   const d=document.createElement('div');
   d.className='card'+(isList?' list-card':'');
   const src=imgSrc(o);
   const dims=dimLabel(o);
   const techLine=[o.annee,o.technique].filter(Boolean).join(' — ');
+  const extraViews = grpItems && grpItems.length>1 ? grpItems.length-1 : 0;
 
   d.innerHTML=`
-    <div class="card-img">
+    <div class="card-img" style="position:relative">
       ${src?`<img src="${src}" alt="${o.titre||o.fichier||''}" loading="lazy">`:'<div class="card-img-ph">🖼</div>'}
+      ${extraViews>0?`<div style="position:absolute;bottom:8px;right:8px;background:rgba(12,12,11,.82);border:1px solid var(--gold2);color:var(--gold);font-size:9px;letter-spacing:.1em;padding:3px 8px;pointer-events:none">+${extraViews} vue${extraViews>1?'s':''}</div>`:''}
     </div>
     <div class="card-body">
       <div class="card-serie">${o.serie||'—'}</div>
@@ -473,7 +494,16 @@ function makeCard(o,idx,isList){
         ${o.prix?`<span class="card-prix">${Number(o.prix).toLocaleString('fr-FR')} €</span>`:''}
       </div>
     </div>`;
-  d.addEventListener('click',()=>openLB(idx));
+
+  d.addEventListener('click',()=>{
+    if(grpItems && grpItems.length>1){
+      // Open lightbox with group items
+      openLBGroup(grpItems, 0);
+    } else {
+      const idx=lbItems.indexOf(o);
+      openLB(idx>=0?idx:0);
+    }
+  });
   return d;
 }
 
@@ -486,26 +516,43 @@ window.setView=v=>{
 };
 
 // ── LIGHTBOX ──────────────────────────────────────────────────
+let lbMode = 'global'; // 'global' or 'group'
+let lbGroupItems = [];
+
 function openLB(idx){
+  lbMode='global';
   lbIdx=idx;
   document.getElementById('lightbox').classList.add('open');
   document.body.style.overflow='hidden';
   renderLB();
 }
+
+function openLBGroup(grpItems, startIdx){
+  lbMode='group';
+  lbGroupItems=grpItems;
+  lbIdx=startIdx;
+  document.getElementById('lightbox').classList.add('open');
+  document.body.style.overflow='hidden';
+  renderLB();
+}
+
 window.closeLB=()=>{
   document.getElementById('lightbox').classList.remove('open');
   document.body.style.overflow='';
 };
+
 window.lbNav=dir=>{
-  lbIdx=(lbIdx+dir+lbItems.length)%lbItems.length;
+  const items = lbMode==='group' ? lbGroupItems : lbItems;
+  lbIdx=(lbIdx+dir+items.length)%items.length;
   renderLB();
 };
 
 function renderLB(){
-  const o=lbItems[lbIdx];
+  const items = lbMode==='group' ? lbGroupItems : lbItems;
+  const o=items[lbIdx];
   if(!o) return;
-  const src=imgHD(o);   // haute résolution Google Drive
-  const thumb=imgSrc(o); // vignette pour la strip
+  const src=imgHD(o);
+  const thumb=imgSrc(o);
   const img=document.getElementById('lb-img');
 
   img.classList.add('fade');
@@ -515,16 +562,18 @@ function renderLB(){
     img.classList.remove('fade');
   },200);
 
+  const items = lbMode==='group' ? lbGroupItems : lbItems;
   document.getElementById('lb-title').textContent = o.titre||o.fichier||'Sans titre';
+  const grpLabel = lbMode==='group' ? ` · Vue ${lbIdx+1}/${items.length}` : '';
   const meta=[o.serie,o.annee,o.technique,dimLabel(o)].filter(Boolean).join(' · ');
-  document.getElementById('lb-meta').textContent = meta;
-  document.getElementById('lb-counter').textContent = (lbIdx+1)+' / '+lbItems.length;
+  document.getElementById('lb-meta').textContent = meta + grpLabel;
+  document.getElementById('lb-counter').textContent = (lbIdx+1)+' / '+items.length;
 
-  // Strip — utilise les vignettes (rapide)
+  // Strip — vignettes
   const strip=document.getElementById('lb-strip');
   strip.innerHTML='';
-  lbItems.forEach((item,i)=>{
-    const s=imgSrc(item);  // vignette base64
+  items.forEach((item,i)=>{
+    const s=imgSrc(item);
     if(s){
       const t=document.createElement('img');
       t.className='strip-thumb'+(i===lbIdx?' active':'');
