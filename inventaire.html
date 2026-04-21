@@ -66,14 +66,14 @@ select:focus{border-color:var(--gold)}
 .view-btn.active{background:var(--text);color:var(--surface);border-color:var(--text)}
 
 /* STATS */
-.stats-bar{position:fixed;top:calc(var(--header-h)+52px+3px);left:0;right:0;z-index:180;background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:24px;padding:12px 28px;overflow-x:auto}
+.stats-bar{position:fixed;left:0;right:0;z-index:180;background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:24px;padding:12px 28px;overflow-x:auto}
 .stat{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
 .stat-val{font-family:var(--serif);font-size:21px;font-weight:300;line-height:1}
 .stat-label{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 .stat-sep{width:1px;background:var(--border);flex-shrink:0}
 
 /* MAIN */
-main{margin-top:calc(var(--header-h)+52px+50px+3px);padding:20px 28px;transition:margin-right .35s ease}
+main{padding:20px 28px;transition:margin-right .35s ease}
 main.panel-open{margin-right:var(--panel-w)}
 
 /* GRID */
@@ -679,6 +679,18 @@ let isDirty  = false;
 let sortField = 'serie', sortDir = 1;
 let seriesEditing = [];
 
+// ── LAYOUT DYNAMIQUE ─────────────────────────────────────────
+// Recalcule les positions stats-bar et main selon la hauteur réelle de la toolbar
+function adjustLayout(){
+  const headerH=document.querySelector('header').offsetHeight+3;
+  const toolbarH=document.querySelector('.toolbar').offsetHeight;
+  const statsBar=document.querySelector('.stats-bar');
+  const statsH=statsBar.offsetHeight;
+  statsBar.style.top=(headerH+toolbarH)+'px';
+  document.getElementById('main').style.marginTop=(headerH+toolbarH+statsH)+'px';
+}
+window.addEventListener('resize',adjustLayout);
+
 // ── SYNC INDICATOR ────────────────────────────────────────────
 const syncBar = document.getElementById('sync-bar');
 function setSyncState(s){
@@ -708,6 +720,7 @@ function startSync(){
       rebuildFilters();
       applyFilters();
       updateStats();
+      adjustLayout();
     });
   }).catch(err=>{
     document.getElementById('loading-overlay').style.display='none';
