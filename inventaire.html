@@ -757,7 +757,7 @@ function applyFilters(){
     if(statut&&o.statut!==statut)return false;
     if(annee&&o.annee!==annee)return false;
     if(q&&![o.titre,o.technique,o.serie,o.localisation,o.notes,o.fichier].join(' ').toLowerCase().includes(q))return false;
-    if(missing==='image'&&o.imgUrl)return false;
+    if(missing==='image'&&o.imgUrl&&o.imgUrl.startsWith('data:'))return false;
     if(missing==='titre'&&o.titre)return false;
     if(missing==='serie'&&o.serie)return false;
     if(missing==='statut'&&o.statut)return false;
@@ -851,7 +851,7 @@ function updateStats(){
   document.getElementById('s-expose').textContent=oeuvres.filter(o=>o.statut==='expose').length;
   document.getElementById('s-coll').textContent=oeuvres.filter(o=>o.statut==='collection').length;
   document.getElementById('s-series').textContent=new Set(oeuvres.map(o=>o.serie).filter(Boolean)).size;
-  const sansImg=oeuvres.filter(o=>!o.imgUrl).length;
+  const sansImg=oeuvres.filter(o=>!o.imgUrl||!o.imgUrl.startsWith('data:')).length;
   const el=document.getElementById('s-sans-img');
   el.textContent=sansImg;
   el.style.color=sansImg>0?'var(--red)':'var(--green)';
@@ -1633,7 +1633,9 @@ async function runBulkUpload(files){
       row.textContent=`⊘ ${file.name} — aucune correspondance`;
       resultsList.appendChild(row);continue;
     }
-    if(oeuvre.imgUrl){
+    // Une URL Drive n'est pas une image web utilisable — on la remplace
+    const isRealImg = o.imgUrl && o.imgUrl.startsWith('data:');
+    if(isRealImg){
       already++;
       row.className='bulk-result-row bulk-result-skip';
       row.textContent=`↷ ${file.name} — image déjà présente`;
