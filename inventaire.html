@@ -240,6 +240,27 @@ main.panel-open{margin-right:var(--panel-w)}
 .batch-thumb{width:100%;aspect-ratio:1;object-fit:cover;border:1px solid var(--border)}
 .batch-thumb-empty{width:100%;aspect-ratio:1;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:16px;border:1px solid var(--border)}
 
+/* BULK UPLOAD */
+.bulk-drop-zone{border:2px dashed var(--border2);padding:32px 22px;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg);margin-bottom:14px;position:relative}
+.bulk-drop-zone:hover,.bulk-drop-zone.drag-over{border-color:var(--gold);background:var(--gold-light)}
+.bulk-drop-zone p{font-family:var(--serif);font-style:italic;color:var(--muted);font-size:15px;margin-top:7px}
+.bulk-drop-zone .dz-icon{font-size:30px;opacity:.35}
+.bulk-progress{display:none;margin-top:14px}
+.bulk-progress.show{display:block}
+.bulk-bar-wrap{height:4px;background:var(--bg2);border-radius:2px;margin:6px 0}
+.bulk-bar{height:4px;background:var(--gold);width:0%;transition:width .15s;border-radius:2px}
+.bulk-label{font-size:9px;color:var(--muted);letter-spacing:.1em;display:flex;justify-content:space-between}
+.bulk-results{margin-top:14px;display:flex;flex-direction:column;gap:3px;max-height:200px;overflow-y:auto}
+.bulk-result-row{display:flex;align-items:center;gap:8px;padding:5px 9px;font-size:10px;border:1px solid var(--border)}
+.bulk-result-ok{background:#f0faf4;border-color:#b7dfca;color:var(--green)}
+.bulk-result-skip{background:var(--bg2);color:var(--muted)}
+.bulk-summary{font-size:10px;color:var(--muted);margin-top:8px;padding:8px 11px;background:var(--bg2);border:1px solid var(--border);line-height:1.8}
+
+/* FILTRE CHAMPS VIDES */
+.filter-missing-btn{padding:6px 11px;background:var(--surface);border:1px solid var(--border);cursor:pointer;font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);transition:all .2s;display:flex;align-items:center;gap:5px}
+.filter-missing-btn.active{background:var(--red);border-color:var(--red);color:#fff}
+.missing-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+
 /* TOAST */
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(14px);background:var(--text);color:var(--bg);padding:9px 18px;font-size:11px;letter-spacing:.09em;opacity:0;transition:all .28s;z-index:999;pointer-events:none;white-space:nowrap}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -272,6 +293,7 @@ main.panel-open{margin-right:var(--panel-w)}
   </div>
   <div class="h-right">
     <button class="btn" onclick="openImportModal()">↑ Importer</button>
+    <button class="btn" onclick="openBulkUploadModal()">🖼 Images</button>
     <button class="btn" onclick="openBatchModal()">⚡ En masse</button>
     <button class="btn btn-gold" onclick="exportCSV()">↓ CSV</button>
     <button class="btn btn-gold" onclick="exportHTML()" title="Exporter une galerie HTML statique">↓ Galerie HTML</button>
@@ -307,6 +329,18 @@ main.panel-open{margin-right:var(--panel-w)}
       <option value="statut">Statut</option>
     </select>
   </div>
+  <div class="filter-group">
+    <span class="filter-label">Manquants</span>
+    <select id="f-missing" onchange="applyFilters()">
+      <option value="">Tous</option>
+      <option value="image">Sans image</option>
+      <option value="titre">Sans titre</option>
+      <option value="serie">Sans série</option>
+      <option value="statut">Sans statut</option>
+      <option value="technique">Sans technique</option>
+      <option value="dimensions">Sans dimensions</option>
+    </select>
+  </div>
   <div class="toolbar-right">
     <span class="count-badge" id="count-badge">—</span>
     <div class="view-toggle">
@@ -329,6 +363,11 @@ main.panel-open{margin-right:var(--panel-w)}
   <div class="stat"><span class="stat-val" id="s-coll" style="color:var(--purple)">—</span><span class="stat-label">Collections</span></div>
   <div class="stat-sep"></div>
   <div class="stat"><span class="stat-val" id="s-series">—</span><span class="stat-label">Séries</span></div>
+  <div class="stat-sep"></div>
+  <div class="stat" style="cursor:pointer" onclick="document.getElementById('f-missing').value='image';applyFilters()" title="Filtrer les œuvres sans image">
+    <span class="stat-val" id="s-sans-img" style="color:var(--muted)">—</span>
+    <span class="stat-label">Sans image</span>
+  </div>
 </div>
 
 <!-- MAIN -->
@@ -551,6 +590,43 @@ main.panel-open{margin-right:var(--panel-w)}
   </div>
 </div>
 
+<!-- BULK UPLOAD IMAGES -->
+<div class="modal-overlay" id="modal-bulk-upload">
+  <div class="modal" style="width:560px">
+    <div class="modal-header">
+      <span class="modal-title">🖼 Upload images en masse</span>
+      <button class="btn btn-sm panel-close" onclick="closeModal('modal-bulk-upload')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:10px;color:var(--muted);margin-bottom:14px;line-height:1.8">
+        Glissez un dossier entier ou sélectionnez plusieurs photos. Chaque image est associée à l'œuvre dont le <strong>nom de fichier</strong> correspond. Les images sont redimensionnées à 1200px avant stockage.
+      </p>
+      <div class="bulk-drop-zone" id="bulk-drop-zone"
+           onclick="document.getElementById('bulk-file-input').click()"
+           ondragover="event.preventDefault();this.classList.add('drag-over')"
+           ondragleave="this.classList.remove('drag-over')"
+           ondrop="handleBulkDrop(event)">
+        <div class="dz-icon">🗂</div>
+        <p>Glisser des photos ici</p>
+        <p style="font-size:10px;margin-top:5px;color:var(--muted)">ou cliquer pour sélectionner plusieurs fichiers</p>
+      </div>
+      <input type="file" id="bulk-file-input" accept="image/*" multiple style="display:none" onchange="handleBulkFileInput(this)">
+      <div class="bulk-progress" id="bulk-progress">
+        <div class="bulk-label">
+          <span id="bulk-label-txt">Traitement…</span>
+          <span id="bulk-label-count"></span>
+        </div>
+        <div class="bulk-bar-wrap"><div class="bulk-bar" id="bulk-bar"></div></div>
+      </div>
+      <div class="bulk-results" id="bulk-results"></div>
+      <div class="bulk-summary" id="bulk-summary" style="display:none"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-bulk-upload')">Fermer</button>
+    </div>
+  </div>
+</div>
+
 <!-- LINK MODAL -->
 <div class="modal-overlay" id="modal-link">
   <div class="modal" style="width:480px">
@@ -675,11 +751,18 @@ function applyFilters(){
   const statut=document.getElementById('f-statut').value;
   const annee=document.getElementById('f-annee').value;
   const sort=document.getElementById('f-sort').value;
+  const missing=document.getElementById('f-missing').value;
   filtered=oeuvres.filter(o=>{
     if(serie&&o.serie!==serie)return false;
     if(statut&&o.statut!==statut)return false;
     if(annee&&o.annee!==annee)return false;
     if(q&&![o.titre,o.technique,o.serie,o.localisation,o.notes,o.fichier].join(' ').toLowerCase().includes(q))return false;
+    if(missing==='image'&&o.imgUrl)return false;
+    if(missing==='titre'&&o.titre)return false;
+    if(missing==='serie'&&o.serie)return false;
+    if(missing==='statut'&&o.statut)return false;
+    if(missing==='technique'&&o.technique)return false;
+    if(missing==='dimensions'&&(o.hauteur||o.largeur))return false;
     return true;
   });
   if(sort==='serie'){
@@ -768,6 +851,10 @@ function updateStats(){
   document.getElementById('s-expose').textContent=oeuvres.filter(o=>o.statut==='expose').length;
   document.getElementById('s-coll').textContent=oeuvres.filter(o=>o.statut==='collection').length;
   document.getElementById('s-series').textContent=new Set(oeuvres.map(o=>o.serie).filter(Boolean)).size;
+  const sansImg=oeuvres.filter(o=>!o.imgUrl).length;
+  const el=document.getElementById('s-sans-img');
+  el.textContent=sansImg;
+  el.style.color=sansImg>0?'var(--red)':'var(--green)';
 }
 
 // ── VIEW ──────────────────────────────────────────────────────
@@ -1489,6 +1576,94 @@ dz.addEventListener('drop',e=>{
   };
   reader.readAsText(file,'UTF-8');
 });
+
+// ── BULK IMAGE UPLOAD ─────────────────────────────────────────
+window.openBulkUploadModal=()=>{
+  document.getElementById('bulk-results').innerHTML='';
+  document.getElementById('bulk-summary').style.display='none';
+  document.getElementById('bulk-progress').classList.remove('show');
+  document.getElementById('bulk-bar').style.width='0%';
+  document.getElementById('modal-bulk-upload').classList.add('open');
+};
+
+window.handleBulkDrop=async e=>{
+  e.preventDefault();
+  document.getElementById('bulk-drop-zone').classList.remove('drag-over');
+  const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'));
+  if(!files.length){toast('Aucune image détectée',true);return;}
+  await runBulkUpload(files);
+};
+
+window.handleBulkFileInput=async input=>{
+  const files=[...input.files];if(!files.length)return;
+  await runBulkUpload(files);input.value='';
+};
+
+async function runBulkUpload(files){
+  const prog=document.getElementById('bulk-progress');
+  const bar=document.getElementById('bulk-bar');
+  const labelTxt=document.getElementById('bulk-label-txt');
+  const labelCount=document.getElementById('bulk-label-count');
+  const resultsList=document.getElementById('bulk-results');
+  const summary=document.getElementById('bulk-summary');
+  prog.classList.add('show');resultsList.innerHTML='';summary.style.display='none';
+
+  let matched=0,skipped=0,already=0;
+  const skippedNames=[];
+  setSyncState('saving');
+
+  // Normalise filename: lowercase, strip extension
+  const norm=n=>n.toLowerCase().replace(/\.[^.]+$/,'').trim();
+
+  // Lookup map: normalised filename → oeuvre
+  const lookup=new Map();
+  oeuvres.forEach(o=>{if(o.fichier)lookup.set(norm(o.fichier),o);});
+
+  for(let i=0;i<files.length;i++){
+    const file=files[i];
+    bar.style.width=Math.round(((i+1)/files.length)*100)+'%';
+    labelTxt.textContent=file.name;
+    labelCount.textContent=`${i+1} / ${files.length}`;
+    const row=document.createElement('div');
+    const oeuvre=lookup.get(norm(file.name));
+
+    if(!oeuvre){
+      skipped++;skippedNames.push(file.name);
+      row.className='bulk-result-row bulk-result-skip';
+      row.textContent=`⊘ ${file.name} — aucune correspondance`;
+      resultsList.appendChild(row);continue;
+    }
+    if(oeuvre.imgUrl){
+      already++;
+      row.className='bulk-result-row bulk-result-skip';
+      row.textContent=`↷ ${file.name} — image déjà présente`;
+      resultsList.appendChild(row);continue;
+    }
+    try{
+      const{dataUrl,kb}=await resizeImageSmart(file);
+      const wb=writeBatch(fdb);
+      wb.update(doc(fdb,'oeuvres',oeuvre.id),{imgUrl:dataUrl});
+      await wb.commit();
+      matched++;
+      row.className='bulk-result-row bulk-result-ok';
+      row.textContent=`✓ ${file.name} → ${oeuvre.titre||oeuvre.fichier} (${kb} Ko)`;
+    }catch(e){
+      skipped++;
+      row.className='bulk-result-row bulk-result-skip';
+      row.textContent=`✕ ${file.name} — erreur: ${e.message}`;
+    }
+    resultsList.appendChild(row);
+    resultsList.scrollTop=resultsList.scrollHeight;
+  }
+
+  setSyncState('saved');
+  bar.style.width='100%';labelTxt.textContent='✓ Terminé';labelCount.textContent='';
+  summary.style.display='block';
+  summary.innerHTML=`<strong>${matched}</strong> image${matched>1?'s':''} ajoutée${matched>1?'s':''}<br>
+    <span style="color:var(--muted)">${already} déjà présente${already>1?'s':''} · ${skipped} sans correspondance</span>
+    ${skippedNames.length?`<br><span style="color:var(--muted);font-size:9px">Non trouvées : ${skippedNames.slice(0,8).join(', ')}${skippedNames.length>8?` … et ${skippedNames.length-8} autres`:''}</span>`:''}`;
+  toast(`✓ ${matched} image${matched>1?'s':''} uploadée${matched>1?'s':''}`);
+}
 
 // ── TOAST ─────────────────────────────────────────────────────
 function toast(msg,err=false){
