@@ -607,8 +607,8 @@ main.panel-open{margin-right:var(--panel-w)}
            ondragleave="this.classList.remove('drag-over')"
            ondrop="handleBulkDrop(event)">
         <div class="dz-icon">🗂</div>
-        <p>Glisser des photos ici</p>
-        <p style="font-size:10px;margin-top:5px;color:var(--muted)">ou cliquer pour sélectionner plusieurs fichiers</p>
+        <p>Glisser un dossier ou des photos ici</p>
+        <p style="font-size:10px;margin-top:5px;color:var(--muted)">Sous-dossiers inclus jusqu'à 3 niveaux · ou cliquer pour sélectionner des fichiers</p>
       </div>
       <input type="file" id="bulk-file-input" accept="image/*" multiple style="display:none" onchange="handleBulkFileInput(this)">
       <div class="bulk-progress" id="bulk-progress">
@@ -1589,8 +1589,52 @@ window.openBulkUploadModal=()=>{
 window.handleBulkDrop=async e=>{
   e.preventDefault();
   document.getElementById('bulk-drop-zone').classList.remove('drag-over');
-  const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'));
-  if(!files.length){toast('Aucune image détectée',true);return;}
+
+  // Utiliser dataTransfer.items pour accéder aux dossiers récursivement
+  const items=[...e.dataTransfer.items];
+  const files=[];
+
+  async function readEntry(entry, depth){
+    if(depth>3)return;
+    if(entry.isFile){
+      await new Promise(res=>{
+        entry.file(f=>{
+          if(f.type.startsWith('image/'))files.push(f);
+          res();
+        },res);
+      });
+    } else if(entry.isDirectory){
+      const reader=entry.createReader();
+      await new Promise(res=>{
+        // createReader peut paginer — on lit jusqu'à épuisement
+        const readAll=()=>reader.readEntries(async entries=>{
+          if(!entries.length){res();return;}
+          for(const child of entries) await readEntry(child,depth+1);
+          readAll();
+        },res);
+        readAll();
+      });
+    }
+  }
+
+  // Montrer un état "scan en cours" pendant la lecture de l'arborescence
+  const prog=document.getElementById('bulk-progress');
+  const labelTxt=document.getElementById('bulk-label-txt');
+  const labelCount=document.getElementById('bulk-label-count');
+  prog.classList.add('show');
+  labelTxt.textContent='Lecture du dossier…';
+  labelCount.textContent='';
+  document.getElementById('bulk-bar').style.width='0%';
+  document.getElementById('bulk-results').innerHTML='';
+  document.getElementById('bulk-summary').style.display='none';
+
+  for(const item of items){
+    const entry=item.webkitGetAsEntry?.();
+    if(entry) await readEntry(entry,1);
+  }
+
+  if(!files.length){toast('Aucune image trouvée dans le dossier',true);prog.classList.remove('show');return;}
+  labelTxt.textContent=`${files.length} image${files.length>1?'s':''} trouvée${files.length>1?'s':''}…`;
   await runBulkUpload(files);
 };
 
@@ -1606,7 +1650,11 @@ async function runBulkUpload(files){
   const labelCount=document.getElementById('bulk-label-count');
   const resultsList=document.getElementById('bulk-results');
   const summary=document.getElementById('bulk-summary');
-  prog.classList.add('show');resultsList.innerHTML='';summary.style.display='none';
+  // Si pas encore affiché (cas input fichier), initialiser
+  if(!prog.classList.contains('show')){
+    prog.classList.add('show');resultsList.innerHTML='';summary.style.display='none';
+    bar.style.width='0%';
+  }
 
   let matched=0,skipped=0,already=0;
   const skippedNames=[];
@@ -1634,7 +1682,7 @@ async function runBulkUpload(files){
       resultsList.appendChild(row);continue;
     }
     // Une URL Drive n'est pas une image web utilisable — on la remplace
-    const isRealImg = o.imgUrl && o.imgUrl.startsWith('data:');
+    const isRealImg = oeuvre.imgUrl && oeuvre.imgUrl.startsWith('data:');
     if(isRealImg){
       already++;
       row.className='bulk-result-row bulk-result-skip';
