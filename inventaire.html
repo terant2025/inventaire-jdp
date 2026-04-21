@@ -54,26 +54,27 @@ header{position:fixed;top:3px;left:0;right:0;z-index:200;height:var(--header-h);
 .btn:disabled{opacity:.4;pointer-events:none}
 
 /* TOOLBAR */
-.toolbar{position:fixed;top:calc(var(--header-h)+3px);left:0;right:0;z-index:190;background:var(--bg2);border-bottom:1px solid var(--border);padding:9px 28px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.filter-group{display:flex;align-items:center;gap:5px}
-.filter-label{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
-select{padding:6px 26px 6px 9px;background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238a847a'/%3E%3C/svg%3E") no-repeat right 9px center;border:1px solid var(--border);font-family:var(--sans);font-size:11px;color:var(--text);appearance:none;cursor:pointer;outline:none}
+.toolbar{position:fixed;top:calc(var(--header-h)+3px);left:0;right:0;z-index:190;background:var(--bg2);border-bottom:1px solid var(--border);padding:7px 28px;display:flex;align-items:center;gap:8px;flex-wrap:nowrap;overflow-x:auto}
+.toolbar::-webkit-scrollbar{height:0}
+.filter-group{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.filter-label{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+select{padding:5px 22px 5px 8px;background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238a847a'/%3E%3C/svg%3E") no-repeat right 8px center;border:1px solid var(--border);font-family:var(--sans);font-size:11px;color:var(--text);appearance:none;cursor:pointer;outline:none}
 select:focus{border-color:var(--gold)}
-.toolbar-right{margin-left:auto;display:flex;align-items:center;gap:7px}
-.count-badge{font-size:9px;letter-spacing:.1em;color:var(--muted);padding:4px 9px;background:var(--surface);border:1px solid var(--border)}
+.toolbar-right{margin-left:auto;display:flex;align-items:center;gap:7px;flex-shrink:0}
+.count-badge{font-size:9px;letter-spacing:.1em;color:var(--muted);padding:4px 9px;background:var(--surface);border:1px solid var(--border);white-space:nowrap}
 .view-toggle{display:flex;gap:2px}
 .view-btn{padding:6px 9px;background:var(--surface);border:1px solid var(--border);cursor:pointer;color:var(--muted);font-size:13px;transition:all .2s}
 .view-btn.active{background:var(--text);color:var(--surface);border-color:var(--text)}
 
 /* STATS */
-.stats-bar{position:fixed;left:0;right:0;z-index:180;background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:24px;padding:12px 28px;overflow-x:auto}
+.stats-bar{position:fixed;top:calc(var(--header-h)+3px+42px);left:0;right:0;z-index:180;background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:24px;padding:12px 28px;overflow-x:auto}
 .stat{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
 .stat-val{font-family:var(--serif);font-size:21px;font-weight:300;line-height:1}
 .stat-label{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 .stat-sep{width:1px;background:var(--border);flex-shrink:0}
 
 /* MAIN */
-main{padding:20px 28px;transition:margin-right .35s ease}
+main{margin-top:calc(var(--header-h)+3px+42px+50px);padding:20px 28px;transition:margin-right .35s ease}
 main.panel-open{margin-right:var(--panel-w)}
 
 /* GRID */
@@ -680,15 +681,15 @@ let sortField = 'serie', sortDir = 1;
 let seriesEditing = [];
 
 // ── LAYOUT DYNAMIQUE ─────────────────────────────────────────
-// Recalcule les positions stats-bar et main selon la hauteur réelle de la toolbar
 function adjustLayout(){
   const headerH=document.querySelector('header').offsetHeight+3;
   const toolbarH=document.querySelector('.toolbar').offsetHeight;
   const statsBar=document.querySelector('.stats-bar');
-  const statsH=statsBar.offsetHeight;
   statsBar.style.top=(headerH+toolbarH)+'px';
+  const statsH=statsBar.offsetHeight;
   document.getElementById('main').style.marginTop=(headerH+toolbarH+statsH)+'px';
 }
+document.addEventListener('DOMContentLoaded',adjustLayout);
 window.addEventListener('resize',adjustLayout);
 
 // ── SYNC INDICATOR ────────────────────────────────────────────
