@@ -812,7 +812,7 @@ function applyFilters(){
   } else {
     filtered.sort((a,b)=>{const va=(a[sort]||'').toString().toLowerCase(),vb=(b[sort]||'').toString().toLowerCase();return va<vb?-sortDir:va>vb?sortDir:0;});
   }
-  document.getElementById('count-badge').textContent=filtered.length+' œuvre'+(filtered.length>1?'s':'');
+  document.getElementById('count-badge').textContent='…';
   render();
 }
 
@@ -828,8 +828,12 @@ window.applyFilters=applyFilters;
 // ── RENDER ────────────────────────────────────────────────────
 function render(){
   const c=document.getElementById('grid-container');c.innerHTML='';
-  if(!filtered.length){c.innerHTML='<div class="empty-state"><div class="icon">🧵</div><p>Aucune œuvre ne correspond aux filtres</p></div>';return;}
+  if(!filtered.length){c.innerHTML='<div class="empty-state"><div class="icon">🧵</div><p>Aucune œuvre ne correspond aux filtres</p></div>';
+    document.getElementById('count-badge').textContent='0 œuvre';return;}
   const displayItems=buildDisplayList(filtered);
+  // Mettre à jour le badge avec le nombre de cartes réelles (groupes = 1)
+  const n=displayItems.length;
+  document.getElementById('count-badge').textContent=n+' œuvre'+(n>1?'s':'');
   if(currentView==='grid'){
     c.className='grid-view active';document.getElementById('list-header-row').style.display='none';
     displayItems.forEach((item,i)=>c.appendChild(makeCard(item,i)));
@@ -886,12 +890,22 @@ function makeRow(item,dispIdx){
 }
 
 // ── STATS ─────────────────────────────────────────────────────
+function countConsolidated(list){
+  const seen=new Set();let n=0;
+  list.forEach(o=>{
+    if(!o.groupe){n++;return;}
+    if(!seen.has(o.groupe)){seen.add(o.groupe);n++;}
+  });
+  return n;
+}
+
 function updateStats(){
-  document.getElementById('s-total').textContent=oeuvres.length;
-  document.getElementById('s-dispo').textContent=oeuvres.filter(o=>o.statut==='disponible').length;
-  document.getElementById('s-vendu').textContent=oeuvres.filter(o=>o.statut==='vendu').length;
-  document.getElementById('s-expose').textContent=oeuvres.filter(o=>o.statut==='expose').length;
-  document.getElementById('s-coll').textContent=oeuvres.filter(o=>o.statut==='collection').length;
+  const total=countConsolidated(oeuvres);
+  document.getElementById('s-total').textContent=total;
+  document.getElementById('s-dispo').textContent=countConsolidated(oeuvres.filter(o=>o.statut==='disponible'));
+  document.getElementById('s-vendu').textContent=countConsolidated(oeuvres.filter(o=>o.statut==='vendu'));
+  document.getElementById('s-expose').textContent=countConsolidated(oeuvres.filter(o=>o.statut==='expose'));
+  document.getElementById('s-coll').textContent=countConsolidated(oeuvres.filter(o=>o.statut==='collection'));
   document.getElementById('s-series').textContent=new Set(oeuvres.map(o=>o.serie).filter(Boolean)).size;
   const sansImg=oeuvres.filter(o=>!o.imgUrl||!o.imgUrl.startsWith('data:')).length;
   const el=document.getElementById('s-sans-img');
