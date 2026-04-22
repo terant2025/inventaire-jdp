@@ -823,6 +823,8 @@ window.sortBy=f=>{
   document.getElementById('f-sort').value=f;applyFilters();
 };
 
+window.applyFilters=applyFilters;
+
 // ── RENDER ────────────────────────────────────────────────────
 function render(){
   const c=document.getElementById('grid-container');c.innerHTML='';
