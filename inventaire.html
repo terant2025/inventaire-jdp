@@ -845,9 +845,11 @@ function buildDisplayList(src){
     if(!o.groupe){out.push({rep:o,members:[o],filteredIdx:filtered.indexOf(o)});return;}
     if(seen.has(o.groupe))return;
     seen.add(o.groupe);
-    const members=src.filter(x=>x.groupe===o.groupe);
-    const rep=members.find(x=>x.groupePrincipal===true||x.groupePrincipal==='true')||members[0];
-    out.push({rep,members,filteredIdx:filtered.indexOf(rep)});
+    // Membres dans filtered pour la navigation, mais on compte depuis oeuvres complet
+    const membersFiltered=src.filter(x=>x.groupe===o.groupe);
+    const membersAll=oeuvres.filter(x=>x.groupe===o.groupe);
+    const rep=membersAll.find(x=>x.groupePrincipal===true||x.groupePrincipal==='true')||membersFiltered[0];
+    out.push({rep,members:membersAll,filteredIdx:filtered.indexOf(rep)});
   });
   return out;
 }
@@ -1183,10 +1185,14 @@ window.applyLink=async()=>{
   const batch=writeBatch(fdb);
   linkSelected.forEach(id=>batch.update(doc(fdb,'oeuvres',id),{groupe}));
   if(!editBuf.groupe){editBuf.groupe=groupe;batch.update(doc(fdb,'oeuvres',editBuf.id),{groupe});document.getElementById('f-groupe').value=groupe;}
-  await batch.commit();setSyncState('saved');
+  await batch.commit();
+  setSyncState('saved');
   closeModal('modal-link');
   toast(`✓ ${linkSelected.size} vue${linkSelected.size>1?'s':''} liée${linkSelected.size>1?'s':''} au groupe « ${groupe} »`);
   linkSelected.clear();
+  // onSnapshot va recharger oeuvres → applyFilters → render
+  // Mais on force aussi le carousel immédiatement (editBuf.groupe est déjà à jour)
+  refreshCarousel();
 };
 
 // ── KEYBOARD ──────────────────────────────────────────────────
