@@ -54,27 +54,28 @@ header{position:fixed;top:3px;left:0;right:0;z-index:200;height:var(--header-h);
 .btn:disabled{opacity:.4;pointer-events:none}
 
 /* TOOLBAR */
-.toolbar{position:fixed;top:calc(var(--header-h)+3px);left:0;right:0;z-index:190;background:var(--bg2);border-bottom:1px solid var(--border);padding:7px 28px;display:flex;align-items:center;gap:8px;flex-wrap:nowrap;overflow-x:auto}
+.toolbar{position:fixed;top:calc(var(--header-h)+3px);left:0;right:0;z-index:190;background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:stretch;gap:0;flex-wrap:nowrap;overflow-x:auto;height:38px}
 .toolbar::-webkit-scrollbar{height:0}
-.filter-group{display:flex;align-items:center;gap:5px;flex-shrink:0}
-.filter-label{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
-select{padding:5px 22px 5px 8px;background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238a847a'/%3E%3C/svg%3E") no-repeat right 8px center;border:1px solid var(--border);font-family:var(--sans);font-size:11px;color:var(--text);appearance:none;cursor:pointer;outline:none}
+.filter-group{display:flex;align-items:center;gap:5px;flex-shrink:0;padding:0 10px;border-right:1px solid var(--border)}
+.filter-group:last-child{border-right:none}
+.filter-label{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+select{padding:4px 20px 4px 7px;background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238a847a'/%3E%3C/svg%3E") no-repeat right 6px center;border:1px solid var(--border);font-family:var(--sans);font-size:11px;color:var(--text);appearance:none;cursor:pointer;outline:none}
 select:focus{border-color:var(--gold)}
-.toolbar-right{margin-left:auto;display:flex;align-items:center;gap:7px;flex-shrink:0}
-.count-badge{font-size:9px;letter-spacing:.1em;color:var(--muted);padding:4px 9px;background:var(--surface);border:1px solid var(--border);white-space:nowrap}
+.toolbar-right{margin-left:auto;display:flex;align-items:center;gap:7px;flex-shrink:0;padding-left:10px}
+.count-badge{font-size:9px;letter-spacing:.1em;color:var(--muted);padding:3px 8px;background:var(--surface);border:1px solid var(--border);white-space:nowrap}
 .view-toggle{display:flex;gap:2px}
-.view-btn{padding:6px 9px;background:var(--surface);border:1px solid var(--border);cursor:pointer;color:var(--muted);font-size:13px;transition:all .2s}
+.view-btn{padding:5px 8px;background:var(--surface);border:1px solid var(--border);cursor:pointer;color:var(--muted);font-size:13px;transition:all .2s}
 .view-btn.active{background:var(--text);color:var(--surface);border-color:var(--text)}
 
 /* STATS */
-.stats-bar{position:fixed;top:calc(var(--header-h)+3px+42px);left:0;right:0;z-index:180;background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:24px;padding:12px 28px;overflow-x:auto}
+.stats-bar{position:fixed;top:calc(var(--header-h)+3px+38px);left:0;right:0;z-index:180;background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:24px;padding:10px 28px;overflow-x:auto}
 .stat{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
 .stat-val{font-family:var(--serif);font-size:21px;font-weight:300;line-height:1}
 .stat-label{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 .stat-sep{width:1px;background:var(--border);flex-shrink:0}
 
 /* MAIN */
-main{margin-top:calc(var(--header-h)+3px+42px+50px);padding:20px 28px;transition:margin-right .35s ease}
+main{margin-top:calc(var(--header-h)+3px+38px+50px);padding:20px 28px;transition:margin-right .35s ease}
 main.panel-open{margin-right:var(--panel-w)}
 
 /* GRID */
@@ -469,8 +470,10 @@ main.panel-open{margin-right:var(--panel-w)}
     </div>
     <div class="field"><label>Dossier d'origine</label><input type="text" id="f-dossier" readonly style="color:var(--muted);font-size:10px;background:var(--bg2);font-family:monospace"></div>
     <div class="field"><label>Fichier</label><input type="text" id="f-fichier" readonly style="color:var(--muted);font-size:10px;background:var(--bg2)"></div>
+    <div class="field"><label>Identifiant œuvre</label><input type="text" id="f-ref" readonly style="color:var(--gold);font-size:10px;background:var(--bg2);font-family:monospace;letter-spacing:.1em"></div>
   </div>
   <div class="panel-footer">
+    <button class="btn btn-sm" onclick="deleteOeuvre()" style="border-color:var(--red);color:var(--red);margin-right:auto" title="Supprimer cette entrée de l'inventaire">🗑 Supprimer</button>
     <span class="panel-sync-state" id="panel-sync-state"></span>
     <button class="btn" onclick="closePanel()">Fermer</button>
     <button class="btn btn-gold" id="btn-save" onclick="savePanel()">✓ Enregistrer</button>
@@ -652,7 +655,7 @@ main.panel-open{margin-right:var(--panel-w)}
 ══════════════════════════════════════════════════════ -->
 <script type="module">
 import { initializeApp }   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, collection, doc, setDoc, onSnapshot, writeBatch, getDocs }
+import { getFirestore, collection, doc, setDoc, onSnapshot, writeBatch, getDocs, deleteDoc }
                            from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 // Storage non utilisé — images stockées en base64 dans Firestore
 
@@ -679,6 +682,27 @@ let editBuf  = {};
 let isDirty  = false;
 let sortField = 'serie', sortDir = 1;
 let seriesEditing = [];
+
+// ── IDENTIFIANT INCRÉMENTAL ───────────────────────────────────
+function generateRef(){
+  const existing=oeuvres.map(o=>o.ref).filter(r=>r&&/^JDP-\d+$/.test(r));
+  const nums=existing.map(r=>parseInt(r.split('-')[1]));
+  const next=(nums.length?Math.max(...nums):0)+1;
+  return 'JDP-'+String(next).padStart(4,'0');
+}
+
+// ── SUPPRESSION ───────────────────────────────────────────────
+window.deleteOeuvre=async()=>{
+  const titre=editBuf.titre||editBuf.fichier||'cette entrée';
+  if(!confirm(`Supprimer « ${titre} » de l'inventaire ?\n\nCette action est irréversible.`))return;
+  setSyncState('saving');
+  try{
+    await deleteDoc(doc(fdb,'oeuvres',editBuf.id));
+    setSyncState('saved');
+    closePanel();
+    toast(`✓ « ${titre} » supprimée`);
+  }catch(e){setSyncState('error');toast('Erreur: '+e.message,true);}
+};
 
 // ── LAYOUT DYNAMIQUE ─────────────────────────────────────────
 function adjustLayout(){
@@ -918,6 +942,7 @@ function fillPanel(){
   document.getElementById('f-dossier').value=o.dossier||o.chemin_rel||'';
   document.getElementById('f-groupe').value=o.groupe||'';
   document.getElementById('f-groupe-principal').checked=o.groupePrincipal===true||o.groupePrincipal==='true';
+  document.getElementById('f-ref').value=o.ref||o.id||'';
   const dl=document.getElementById('groupes-list');dl.innerHTML='';
   const groupes=[...new Set(oeuvres.map(x=>x.groupe).filter(Boolean))].sort();
   groupes.forEach(g=>{const opt=document.createElement('option');opt.value=g;dl.appendChild(opt);});
@@ -938,6 +963,8 @@ window.savePanel=async()=>{
   document.getElementById('panel-sync-state').textContent='Enregistrement…';
   setSyncState('saving');
   try{
+    // Assigner un ref incrémental si absent
+    if(!editBuf.ref){editBuf.ref=generateRef();document.getElementById('f-ref').value=editBuf.ref;}
     if(editBuf.serie&&!series.includes(editBuf.serie)){series.push(editBuf.serie);await fsSetSeriesConfig();}
     await fsSetOeuvre(editBuf);
     isDirty=false;setSyncState('saved');
@@ -1065,9 +1092,9 @@ function rebuildPanelImg(wrap,dataUrl,kb){
 function refreshCarousel(){
   const groupe=editBuf.groupe||document.getElementById('f-groupe')?.value||'';
   const car=document.getElementById('group-carousel');
-  if(!groupe){car.style.display='none';return;}
+  if(!groupe){car.style.display='none';render();return;}
   const members=oeuvres.filter(x=>x.groupe===groupe);
-  if(members.length<2){car.style.display='none';return;}
+  if(members.length<2){car.style.display='none';render();return;}
   car.style.display='flex';
   document.getElementById('gc-group-name').textContent=`Groupe « ${groupe} » — ${members.length} vues`;
   const thumbs=document.getElementById('gc-thumbs');thumbs.innerHTML='';
@@ -1262,6 +1289,7 @@ async function importCSVData(text){
 function normalizeItem(item){
   return {
     id:             item.id||'img_'+Math.random().toString(36).slice(2),
+    ref:            item.ref||'',
     fichier:        item.fichier||item.Name||item.name||'',
     serie:          item.serie||item.Serie||'',
     dossier:        item.dossier||'',
@@ -1295,7 +1323,7 @@ function parseCSVLine(line){
 
 // ── EXPORT CSV ────────────────────────────────────────────────
 window.exportCSV=()=>{
-  const cols=['id','fichier','dossier','serie','titre','annee','technique','hauteur','largeur','profondeur','prix','statut','localisation','notes'];
+  const cols=['id','ref','fichier','dossier','serie','titre','annee','technique','hauteur','largeur','profondeur','prix','statut','localisation','notes'];
   const csv='\uFEFF'+[cols.join(','),...oeuvres.map(o=>cols.map(c=>`"${(o[c]||'').toString().replace(/"/g,'""')}"`).join(','))].join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='inventaire-jdp.csv';a.click();
   toast('✓ CSV exporté — '+oeuvres.length+' œuvres');
