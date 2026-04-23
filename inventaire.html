@@ -1366,10 +1366,6 @@ window.exportHTML=()=>{
   document.getElementById('modal-export-html').classList.add('open');
 };
 
-function updateExpCount(){
-  const n=getExportOeuvres().length;
-  document.getElementById('exp-count').textContent=n+' œuvre'+(n>1?'s':'')+' sélectionnée'+(n>1?'s':'');
-}
 ['exp-serie','exp-annee','exp-statut'].forEach(id=>{
   const el=document.getElementById(id);
   if(el) el.addEventListener('change',updateExpCount);
