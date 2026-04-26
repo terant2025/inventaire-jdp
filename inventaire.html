@@ -1563,12 +1563,11 @@ function normalizeItem(item){
   };
 }
 
-// Accesseur rapide : image principale d'une œuvre
-function mainVue(o){
-  if(!o.vues||!o.vues.length)return{imgUrl:o.imgUrl||'',fichier:o.fichier||''};
-  return o.vues.find(v=>v.principale)||o.vues[0];
+// Accesseur image principale — structure plate Firebase (pas de vues[])
+function mainImg(o){
+  // Chaque document Firebase a imgUrl directement (base64)
+  return o.imgUrl||'';
 }
-function mainImg(o){return mainVue(o).imgUrl||'';}
 
 function parseCSVLine(line){
   const r=[];let c='',q=false;
@@ -1657,29 +1656,34 @@ window.doExportHTML=()=>{
   const statusLabel={disponible:'Disponible',vendu:'Vendu',expose:'Exposé',collection:'Collection privée'};
   const statusColor={disponible:'#2d6a4f',vendu:'#c0392b',expose:'#2c5f8a',collection:'#6b3fa0'};
 
-  // Construire structure lightbox : [{meta, vues:[{thumb,hd}]}]
+  // Construire structure lightbox
+  // Chaque entrée = 1 œuvre (ou groupe), avec ses vues = documents Firebase plats
+  // imgUrl est directement sur chaque document (pas de vues[])
   const lbData=data.map(({rep,vues})=>{
     const dims=[rep.hauteur,rep.largeur,rep.profondeur].filter(Boolean).join(' × ');
     return {
       meta:{
-        serie:rep.serie||'',titre:rep.titre||rep.fichier||'Sans titre',
-        annee:rep.annee||'',technique:rep.technique||'',dims,
-        prix:rep.prix||'',statut:rep.statut||''
+        serie:  rep.serie||'',
+        titre:  rep.titre||rep.fichier||'Sans titre',
+        annee:  rep.annee||'',
+        technique: rep.technique||'',
+        dims,
+        prix:   rep.prix||'',
+        statut: rep.statut||''
       },
-      vues:vues.map(v=>({
-        img:v.imgUrl||''
-      }))
+      // Chaque vue = un document Firebase avec imgUrl directement
+      vues: vues.map(v=>({ img: v.imgUrl||'' }))
     };
   });
 
   // Cartes grille
   const cartes=data.map(({rep,vues},oi)=>{
     const dims=[rep.hauteur,rep.largeur,rep.profondeur].filter(Boolean).join(' × ');
-    const thumb=mainImg(rep);
-    const nbVues=vues.filter(v=>v.imgUrl).length;
+    const thumb=mainImg(rep);  // imgUrl directement depuis Firestore
+    const nbVues=vues.filter(v=>v.imgUrl).length; // nb de docs dans le groupe avec image
     return `<div class="card" data-serie="${(rep.serie||'').replace(/"/g,'&quot;')}" onclick="openLB(${oi},0)">
       <div class="card-img">
-        ${thumb?`<img src="${thumb}" alt="${(rep.titre||'').replace(/"/g,'&quot;')}" loading="lazy">`:'<div class="card-img-ph">🖼</div>'}
+        ${thumb?`<img src="${thumb}" alt="${(rep.titre||rep.fichier||'').replace(/"/g,'&quot;')}" loading="lazy">`:'<div class="card-img-ph">🖼</div>'}
         ${nbVues>1?`<span class="card-multi">+${nbVues-1} vue${nbVues>2?'s':''}</span>`:''}
       </div>
       <div class="card-body">
@@ -1913,7 +1917,7 @@ function filterSerie(btn,serie){
   const blob=new Blob([html],{type:'text/html;charset=utf-8'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
-  a.download=`galerie-jdp-${filtreLabel.replace(/[^a-z0-9]/gi,'-').toLowerCase()}.html`;
+  a.download=`galerie.html`;
   a.click();
   closeModal('modal-export-html');
   toast(`✓ Galerie exportée — ${n} œuvre${n>1?'s':''}`);
