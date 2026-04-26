@@ -201,6 +201,12 @@ main.panel-open{margin-right:var(--panel-w)}
 .gc-star.on{color:var(--gold)}
 .gc-star:not(.on){opacity:0}
 .gc-thumb:hover .gc-star{opacity:1}
+.gc-del{position:absolute;bottom:2px;right:2px;font-size:9px;line-height:1;cursor:pointer;background:rgba(192,57,43,.85);color:#fff;padding:1px 4px;opacity:0;transition:opacity .15s}
+.gc-thumb:hover .gc-del{opacity:1}
+
+/* MIGRATION BANNER */
+.migrate-banner{background:var(--gold);color:#fff;padding:10px 28px;font-size:10px;letter-spacing:.1em;display:flex;align-items:center;gap:12px;position:fixed;bottom:0;left:0;right:0;z-index:500}
+.migrate-banner button{background:#fff;color:var(--gold);border:none;padding:5px 14px;font-family:var(--sans);font-size:9px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;font-weight:400}
 .gc-add-btn{flex-shrink:0;width:52px;height:52px;border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);font-size:20px;background:var(--surface);transition:all .18s}
 .gc-add-btn:hover{border-color:var(--gold);color:var(--gold)}
 
@@ -301,6 +307,7 @@ main.panel-open{margin-right:var(--panel-w)}
     <button class="btn" onclick="openImportModal()">↑ Importer</button>
     <button class="btn" onclick="openBulkUploadModal()">🖼 Images</button>
     <button class="btn" onclick="openBatchModal()">⚡ En masse</button>
+    <button class="btn" id="btn-migrate" onclick="runMigration()" style="display:none;border-color:var(--gold);color:var(--gold)" title="Fusionner les entrées groupées en œuvres uniques">⚙ Migrer groupes</button>
     <button class="btn btn-gold" onclick="exportCSV()">↓ CSV</button>
     <button class="btn btn-gold" onclick="exportHTML()" title="Exporter une galerie HTML statique">↓ Galerie HTML</button>
   </div>
@@ -460,21 +467,17 @@ main.panel-open{margin-right:var(--panel-w)}
     <div class="field"><label>Localisation</label><input type="text" id="f-localisation" placeholder="Atelier, Galerie…" oninput="markDirty('localisation',this.value)"></div>
     <div class="field"><label>Notes</label><textarea id="f-notes" oninput="markDirty('notes',this.value)"></textarea></div>
     <div class="field" style="background:var(--bg2);padding:12px;border:1px solid var(--border)">
-      <label style="color:var(--gold);margin-bottom:8px;display:block">Groupe de vues</label>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div class="field">
-          <label>Nom du groupe <span style="color:var(--muted);font-size:8px">— même nom sur toutes les vues liées</span></label>
-          <div style="display:flex;gap:5px">
-            <input type="text" id="f-groupe" placeholder="ex: Matrice, Totem-I…" oninput="markDirty('groupe',this.value);refreshCarousel()" list="groupes-list" style="flex:1;padding:7px 9px;background:var(--bg);border:1px solid var(--border);font-family:var(--sans);font-size:12px;outline:none">
-            <button class="btn btn-sm" onclick="openLinkModal()" title="Lier d'autres œuvres à ce groupe">⊕ Lier</button>
-          </div>
-          <datalist id="groupes-list"></datalist>
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:10px;color:var(--muted)">
-          <input type="checkbox" id="f-groupe-principal" style="accent-color:var(--gold)" onchange="markDirty('groupePrincipal',this.checked)">
-          Photo principale du groupe (affichée en vignette dans la galerie)
-        </label>
+      <label style="color:var(--gold);margin-bottom:8px;display:block">Vues supplémentaires</label>
+      <p style="font-size:10px;color:var(--muted);line-height:1.7;margin-bottom:8px">
+        Glissez des photos sur l'image ci-dessus pour ajouter des vues.<br>
+        Les métadonnées sont partagées entre toutes les vues d'une même œuvre.
+      </p>
+      <div style="display:flex;gap:5px">
+        <input type="text" id="f-groupe" placeholder="Identifiant de groupe (auto)" readonly
+               style="flex:1;padding:7px 9px;background:var(--bg);border:1px solid var(--border);font-family:monospace;font-size:10px;color:var(--muted);outline:none">
+        <button class="btn btn-sm" onclick="openLinkModal()" title="Lier d'autres œuvres existantes à ce groupe">⊕ Lier</button>
       </div>
+      <datalist id="groupes-list"></datalist>
     </div>
     <div class="field"><label>Dossier d'origine</label><input type="text" id="f-dossier" readonly style="color:var(--muted);font-size:10px;background:var(--bg2);font-family:monospace"></div>
     <div class="field"><label>Fichier</label><input type="text" id="f-fichier" readonly style="color:var(--muted);font-size:10px;background:var(--bg2)"></div>
@@ -754,6 +757,7 @@ function startSync(){
       applyFilters();
       updateStats();
       adjustLayout();
+      checkMigrationNeeded();
     });
   }).catch(err=>{
     document.getElementById('loading-overlay').style.display='none';
@@ -803,7 +807,10 @@ function applyFilters(){
     if(statut&&o.statut!==statut)return false;
     if(annee&&o.annee!==annee)return false;
     if(q&&![o.titre,o.technique,o.serie,o.localisation,o.notes,o.fichier].join(' ').toLowerCase().includes(q))return false;
-    if(missing==='image'&&o.imgUrl&&o.imgUrl.startsWith('data:'))return false;
+    if(missing==='image'){
+      const hasImg=o.vues?.some(v=>v.imgUrl?.startsWith('data:'))||(o.imgUrl?.startsWith('data:'));
+      if(hasImg)return false;
+    }
     if(missing==='titre'&&o.titre)return false;
     if(missing==='serie'&&o.serie)return false;
     if(missing==='statut'&&o.statut)return false;
@@ -858,38 +865,43 @@ function buildDisplayList(src){
     if(!o.groupe){out.push({rep:o,members:[o],filteredIdx:filtered.indexOf(o)});return;}
     if(seen.has(o.groupe))return;
     seen.add(o.groupe);
-    // Membres dans filtered pour la navigation, mais on compte depuis oeuvres complet
-    const membersFiltered=src.filter(x=>x.groupe===o.groupe);
     const membersAll=oeuvres.filter(x=>x.groupe===o.groupe);
-    const rep=membersAll.find(x=>x.groupePrincipal===true||x.groupePrincipal==='true')||membersFiltered[0];
+    const rep=membersAll.find(x=>mainImg(x))||membersAll[0];
     out.push({rep,members:membersAll,filteredIdx:filtered.indexOf(rep)});
   });
   return out;
 }
 
-function makeCard(item,dispIdx){
-  const{rep,members}=item;const multi=members.length>1;
+function makeCard(item){
+  const{rep,members}=item;
   const isSelected=panelIdx>=0&&members.some(m=>filtered.indexOf(m)===panelIdx);
+  const img=mainImg(rep);
+  // Compter toutes les vues : vues[] de tous les membres
+  const totalVues=members.reduce((n,m)=>n+(m.vues?.length||1),0);
+  const multi=totalVues>1;
   const d=document.createElement('div');
   d.className='card'+(isSelected?' selected':'');
-  d.innerHTML=`<div class="card-img">${rep.imgUrl?`<img src="${rep.imgUrl}" loading="lazy" alt="">`:'<span class="card-img-ph">🖼</span>'}</div>
-    ${multi?`<div class="group-badge">⊞ ${members.length} vues</div>`:''}
+  d.innerHTML=`<div class="card-img">${img?`<img src="${img}" loading="lazy" alt="">`:'<span class="card-img-ph">🖼</span>'}</div>
+    ${multi?`<div class="group-badge">⊞ ${totalVues} vue${totalVues>1?'s':''}</div>`:''}
     <div class="card-body">
       <div class="card-serie">${rep.serie||'—'}</div>
-      <div class="card-title">${rep.titre||`<em>${rep.fichier||'Sans titre'}</em>`}</div>
+      <div class="card-title">${rep.titre||`<em>${mainVue(rep).fichier||'Sans titre'}</em>`}</div>
       <div class="card-meta"><span class="card-year">${rep.annee||'—'}</span>${rep.statut?`<span class="status-dot ${sc(rep.statut)}" title="${sl(rep.statut)}"></span>`:''}</div>
     </div>
     <button class="card-edit-btn" onclick="event.stopPropagation();openPanel(${item.filteredIdx})">✎</button>`;
   d.addEventListener('click',()=>openPanel(item.filteredIdx));return d;
 }
 
-function makeRow(item,dispIdx){
-  const{rep,members}=item;const multi=members.length>1;
+function makeRow(item){
+  const{rep,members}=item;
   const isSelected=panelIdx>=0&&members.some(m=>filtered.indexOf(m)===panelIdx);
+  const img=mainImg(rep);
+  const totalVues=members.reduce((n,m)=>n+(m.vues?.length||1),0);
+  const multi=totalVues>1;
   const d=document.createElement('div');
   d.className='list-row'+(isSelected?' selected':'');
-  d.innerHTML=`${rep.imgUrl?`<img class="list-thumb" src="${rep.imgUrl}" loading="lazy" alt="">`:'<div class="list-thumb-empty">🖼</div>'}
-    <div class="list-title">${rep.titre||`<em>${rep.fichier||'Sans titre'}</em>`}<small>${rep.serie||'—'}${multi?` · <strong style="color:var(--gold)">${members.length} vues</strong>`:''}</small></div>
+  d.innerHTML=`${img?`<img class="list-thumb" src="${img}" loading="lazy" alt="">`:'<div class="list-thumb-empty">🖼</div>'}
+    <div class="list-title">${rep.titre||`<em>${mainVue(rep).fichier||'Sans titre'}</em>`}<small>${rep.serie||'—'}${multi?` · <strong style="color:var(--gold)">${totalVues} vues</strong>`:''}</small></div>
     <div class="list-cell">${rep.technique||'—'}</div>
     <div class="list-cell">${dimLabel(rep)}</div>
     <div class="list-cell">${rep.annee||'—'}</div>
@@ -900,12 +912,18 @@ function makeRow(item,dispIdx){
 
 // ── STATS ─────────────────────────────────────────────────────
 function countConsolidated(list){
+  // Après migration : plus de groupes cross-entrées, chaque œuvre est unique
+  // Avant migration : dédupliquer par groupe
   const seen=new Set();let n=0;
   list.forEach(o=>{
     if(!o.groupe){n++;return;}
     if(!seen.has(o.groupe)){seen.add(o.groupe);n++;}
   });
   return n;
+}
+
+function totalVuesOeuvre(o){
+  return o.vues?.length||1;
 }
 
 function updateStats(){
@@ -916,7 +934,11 @@ function updateStats(){
   document.getElementById('s-expose').textContent=countConsolidated(oeuvres.filter(o=>o.statut==='expose'));
   document.getElementById('s-coll').textContent=countConsolidated(oeuvres.filter(o=>o.statut==='collection'));
   document.getElementById('s-series').textContent=new Set(oeuvres.map(o=>o.serie).filter(Boolean)).size;
-  const sansImg=oeuvres.filter(o=>!o.imgUrl||!o.imgUrl.startsWith('data:')).length;
+  const sansImg=oeuvres.filter(o=>{
+    const vues=o.vues||[];
+    if(vues.length)return !vues.some(v=>v.imgUrl?.startsWith('data:'));
+    return !o.imgUrl||!o.imgUrl.startsWith('data:');
+  }).length;
   const el=document.getElementById('s-sans-img');
   el.textContent=sansImg;
   el.style.color=sansImg>0?'var(--red)':'var(--green)';
@@ -947,37 +969,53 @@ window.closePanel=()=>{
   panelIdx=-1;isDirty=false;render();
 };
 
+// Index de la vue affichée dans le panel (parmi editBuf.vues)
+let panelVueIdx=0;
+
 function fillPanel(){
   const o=editBuf;
   document.getElementById('p-serie-label').textContent=o.serie||'Série';
-  document.getElementById('p-titre').textContent=o.titre||o.fichier||'Sans titre';
   document.getElementById('p-nav-info').textContent=(panelIdx+1)+' / '+filtered.length;
+
+  // Vues : compatibilité ancienne structure plate
+  if(!o.vues||!o.vues.length){
+    o.vues=[{id:'v_'+Math.random().toString(36).slice(2),imgUrl:o.imgUrl||'',
+              fichier:o.fichier||'',dossier:o.dossier||'',principale:true}];
+  }
+  if(panelVueIdx>=o.vues.length)panelVueIdx=0;
+  const vue=o.vues[panelVueIdx];
+  const imgUrl=vue.imgUrl||'';
+  document.getElementById('p-titre').textContent=o.titre||vue.fichier||'Sans titre';
+
+  // Zone image
   const wrap=document.getElementById('p-img-wrap');
-  const btn=wrap.querySelector('.panel-upload-btn');
-  if(o.imgUrl){
-    const kb=Math.round(o.imgUrl.length*0.75/1024);
-    wrap.innerHTML=`<img src="${o.imgUrl}" alt="" style="cursor:pointer">`;
-    const badge=document.createElement('span');badge.className='panel-img-weight';badge.textContent=`${kb} Ko`;
-    wrap.appendChild(badge);
-    if(o.imgUrl.startsWith('data:')){
-      const rb=document.createElement('div');rb.className='panel-rotate-btns';rb.onclick=e=>e.stopPropagation();
-      rb.innerHTML=`<button class="panel-rotate-btn" onclick="rotateImage(-90)" title="Pivoter à gauche">↺</button><button class="panel-rotate-btn" onclick="rotateImage(90)" title="Pivoter à droite">↻</button>`;
-      wrap.appendChild(rb);
-    }
+  wrap.innerHTML='';
+  if(imgUrl&&imgUrl.startsWith('data:')){
+    const kb=Math.round(imgUrl.length*0.75/1024);
+    const img=document.createElement('img');img.src=imgUrl;img.style.cursor='pointer';wrap.appendChild(img);
+    const badge=document.createElement('span');badge.className='panel-img-weight';badge.textContent=`${kb} Ko`;wrap.appendChild(badge);
+    const rb=document.createElement('div');rb.className='panel-rotate-btns';rb.onclick=e=>e.stopPropagation();
+    rb.innerHTML=`<button class="panel-rotate-btn" onclick="rotateImage(-90)">↺</button><button class="panel-rotate-btn" onclick="rotateImage(90)">↻</button>`;
+    wrap.appendChild(rb);
   } else {
     wrap.innerHTML='<div class="panel-img-empty">🖼</div>';
   }
-  if(btn)wrap.appendChild(btn);
-  else{const b=document.createElement('button');b.className='panel-upload-btn';b.textContent='↑ Image';b.onclick=e=>{e.stopPropagation();triggerImageUpload();};wrap.appendChild(b);}
-  const map={titre:'f-titre',serie:'f-serie-edit',annee:'f-annee-edit',statut:'f-statut-edit',technique:'f-technique',hauteur:'f-hauteur',largeur:'f-largeur',profondeur:'f-profondeur',prix:'f-prix',localisation:'f-localisation',notes:'f-notes',fichier:'f-fichier'};
+  const btnUp=document.createElement('button');btnUp.className='panel-upload-btn';btnUp.textContent='↑ Image';
+  btnUp.onclick=e=>{e.stopPropagation();triggerImageUpload();};wrap.appendChild(btnUp);
+
+  // Métadonnées communes
+  const map={titre:'f-titre',serie:'f-serie-edit',annee:'f-annee-edit',statut:'f-statut-edit',
+             technique:'f-technique',hauteur:'f-hauteur',largeur:'f-largeur',profondeur:'f-profondeur',
+             prix:'f-prix',localisation:'f-localisation',notes:'f-notes'};
   Object.entries(map).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=o[k]||'';});
-  document.getElementById('f-dossier').value=o.dossier||o.chemin_rel||'';
-  document.getElementById('f-groupe').value=o.groupe||'';
-  document.getElementById('f-groupe-principal').checked=o.groupePrincipal===true||o.groupePrincipal==='true';
+  document.getElementById('f-dossier').value=vue.dossier||'';
+  document.getElementById('f-fichier').value=vue.fichier||'';
   document.getElementById('f-ref').value=o.ref||o.id||'';
+  document.getElementById('f-groupe').value=o.groupe||'';
+  // Datalist groupes
   const dl=document.getElementById('groupes-list');dl.innerHTML='';
-  const groupes=[...new Set(oeuvres.map(x=>x.groupe).filter(Boolean))].sort();
-  groupes.forEach(g=>{const opt=document.createElement('option');opt.value=g;dl.appendChild(opt);});
+  [...new Set(oeuvres.map(x=>x.groupe).filter(Boolean))].sort()
+    .forEach(g=>{const opt=document.createElement('option');opt.value=g;dl.appendChild(opt);});
   refreshCarousel();
 }
 
@@ -1045,9 +1083,21 @@ async function processSingleImage(file,applyToPanel){
     const{dataUrl,kb}=await resizeImageSmart(file);
     barEl.style.width='100%';weightEl.textContent=`${kb} Ko`;labelEl.textContent='✓ Prêt';
     if(applyToPanel){
-      editBuf.imgUrl=dataUrl;
-      rebuildPanelImg(document.getElementById('p-img-wrap'),dataUrl,kb);
-      markDirty('imgUrl',dataUrl);
+      // Ajouter comme nouvelle vue ou remplacer la vue courante si vide
+      if(!editBuf.vues)editBuf.vues=[];
+      const vues=editBuf.vues;
+      const vue=vues[panelVueIdx];
+      if(vue&&!vue.imgUrl){
+        // Remplacer la vue vide courante
+        vue.imgUrl=dataUrl;vue.fichier=file.name;
+      } else {
+        // Ajouter une nouvelle vue
+        vues.push({id:'v_'+Math.random().toString(36).slice(2),imgUrl:dataUrl,fichier:file.name,dossier:'',principale:vues.length===0});
+        panelVueIdx=vues.length-1;
+      }
+      editBuf.vues=vues;
+      fillPanel();
+      markDirty('vues',vues);
       toast(`✓ Image prête (${kb} Ko) — Enregistrer pour sauvegarder`);
     }
     setTimeout(()=>prog.classList.remove('show'),2000);
@@ -1061,33 +1111,33 @@ async function processMultiImages(files){
   const weightEl=document.getElementById('upload-multi-weight');
   const barEl=document.getElementById('upload-multi-bar');
   prog.classList.add('show');
-  let groupe=editBuf.groupe;
-  if(!groupe){
-    groupe=(editBuf.titre||editBuf.fichier||'groupe_'+Date.now()).replace(/\s+/g,'-').toLowerCase();
-    editBuf.groupe=groupe;document.getElementById('f-groupe').value=groupe;markDirty('groupe',groupe);
-  }
+
+  if(!editBuf.vues)editBuf.vues=[];
   setSyncState('saving');
   let totalKb=0;
-  const batch=writeBatch(fdb);
+
   for(let i=0;i<files.length;i++){
     barEl.style.width=Math.round(((i+0.5)/files.length)*100)+'%';
     labelEl.textContent=`Image ${i+1} / ${files.length} — ${files[i].name}`;
     const{dataUrl,kb}=await resizeImageSmart(files[i]);
     totalKb+=kb;weightEl.textContent=`~${totalKb} Ko total`;
-    if(i===0){
-      editBuf.imgUrl=dataUrl;editBuf.groupePrincipal=true;
-      rebuildPanelImg(document.getElementById('p-img-wrap'),dataUrl,kb);
-      markDirty('imgUrl',dataUrl);markDirty('groupePrincipal',true);
-    } else {
-      const newId='img_'+Math.random().toString(36).slice(2);
-      const sibling={fichier:files[i].name,dossier:editBuf.dossier||'',serie:editBuf.serie||'',titre:editBuf.titre||'',annee:editBuf.annee||'',technique:editBuf.technique||'',hauteur:editBuf.hauteur||'',largeur:editBuf.largeur||'',profondeur:editBuf.profondeur||'',prix:editBuf.prix||'',statut:editBuf.statut||'',localisation:editBuf.localisation||'',notes:editBuf.notes||'',groupe,groupePrincipal:false,imgUrl:dataUrl,imgHD:'',driveId:''};
-      batch.set(doc(fdb,'oeuvres',newId),sibling);
-    }
+    const estPremiere=editBuf.vues.length===0&&i===0;
+    editBuf.vues.push({
+      id:'v_'+Math.random().toString(36).slice(2),
+      imgUrl:dataUrl,fichier:files[i].name,dossier:'',
+      principale:estPremiere,
+    });
+    if(i===0)panelVueIdx=editBuf.vues.length-1;
   }
-  await batch.commit();setSyncState('saved');
-  barEl.style.width='100%';labelEl.textContent=`✓ ${files.length} images traitées`;weightEl.textContent=`~${totalKb} Ko total`;
-  toast(`✓ ${files.length} vues ajoutées au groupe « ${groupe} »`);
+
+  await fsSetOeuvre(editBuf);
+  setSyncState('saved');
+  barEl.style.width='100%';
+  labelEl.textContent=`✓ ${files.length} images ajoutées`;
+  weightEl.textContent=`~${totalKb} Ko total`;
+  toast(`✓ ${files.length} vues ajoutées à l'œuvre`);
   setTimeout(()=>prog.classList.remove('show'),2500);
+  fillPanel();
 }
 
 async function resizeImageSmart(file){
@@ -1127,81 +1177,130 @@ function rebuildPanelImg(wrap,dataUrl,kb){
 
 // ── ROTATION IMAGE ────────────────────────────────────────────
 window.rotateImage=async(deg)=>{
-  if(!editBuf.imgUrl||!editBuf.imgUrl.startsWith('data:'))return;
+  const vues=editBuf.vues||[];
+  const vue=vues[panelVueIdx];
+  if(!vue||!vue.imgUrl||!vue.imgUrl.startsWith('data:'))return;
   const img=new Image();
-  await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=editBuf.imgUrl;});
-  // Pour ±90° les dimensions s'inversent
+  await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=vue.imgUrl;});
   const swap=deg===90||deg===-90;
-  const w=swap?img.height:img.width;
-  const h=swap?img.width:img.height;
-  const canvas=document.createElement('canvas');
-  canvas.width=w;canvas.height=h;
-  const ctx=canvas.getContext('2d');
-  ctx.translate(w/2,h/2);
-  ctx.rotate(deg*Math.PI/180);
+  const w=swap?img.height:img.width,h=swap?img.width:img.height;
+  const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+  const ctx=canvas.getContext('2d');ctx.translate(w/2,h/2);ctx.rotate(deg*Math.PI/180);
   ctx.drawImage(img,-img.width/2,-img.height/2);
   const dataUrl=canvas.toDataURL('image/jpeg',0.82);
   const kb=Math.round(dataUrl.length*0.75/1024);
-  // Mettre à jour editBuf et l'affichage
-  editBuf.imgUrl=dataUrl;
-  rebuildPanelImg(document.getElementById('p-img-wrap'),dataUrl,kb);
-  // Sauvegarder directement en Firestore
+  vue.imgUrl=dataUrl;editBuf.vues=vues;
+  fillPanel();
   setSyncState('saving');
   try{
-    const{id,...data}=editBuf;
-    const wb=writeBatch(fdb);
-    wb.update(doc(fdb,'oeuvres',editBuf.id),{imgUrl:dataUrl});
-    await wb.commit();
-    setSyncState('saved');
-    toast(`✓ Image pivotée (${kb} Ko)`);
+    const wb=writeBatch(fdb);wb.update(doc(fdb,'oeuvres',editBuf.id),{vues});await wb.commit();
+    setSyncState('saved');toast(`✓ Image pivotée (${kb} Ko)`);
   }catch(e){setSyncState('error');toast('Erreur: '+e.message,true);}
 };
 
-// ── GROUP CAROUSEL ────────────────────────────────────────────
-function refreshCarousel(){
-  const groupe=editBuf.groupe||document.getElementById('f-groupe')?.value||'';
-  const car=document.getElementById('group-carousel');
-  if(!groupe){car.style.display='none';render();return;}
-  const members=oeuvres.filter(x=>x.groupe===groupe);
-  if(members.length<2){car.style.display='none';render();return;}
-  car.style.display='flex';
-  document.getElementById('gc-group-name').textContent=`Groupe « ${groupe} » — ${members.length} vues`;
-  const thumbs=document.getElementById('gc-thumbs');thumbs.innerHTML='';
-  members.forEach(m=>{
-    const div=document.createElement('div');
-    div.className='gc-thumb'+(m.id===editBuf.id?' active':'');
-    div.innerHTML=`${m.imgUrl?`<img src="${m.imgUrl}" alt="">`:'<div class="gc-thumb-empty">🖼</div>'}<span class="gc-star${(m.groupePrincipal===true||m.groupePrincipal==='true')?' on':''}" title="Définir comme photo principale" onclick="event.stopPropagation();setGroupPrincipal('${m.id}','${groupe}')">★</span>`;
-    div.title=m.titre||m.fichier||'Vue';
-    div.addEventListener('click',()=>{
-      const idx=filtered.findIndex(x=>x.id===m.id);
-      if(idx>=0){if(isDirty&&!confirm('Modifications non enregistrées. Continuer ?'))return;panelIdx=idx;isDirty=false;editBuf={...filtered[idx]};fillPanel();render();}
-      else{isDirty=false;panelIdx=-1;editBuf={...m};fillPanel();render();}
-    });
-    thumbs.appendChild(div);
+// ── MIGRATION GROUPES → VUES[] ────────────────────────────────
+window.runMigration=async()=>{
+  const grouped=new Map();
+  oeuvres.forEach(o=>{
+    if(!o.groupe)return;
+    if(!grouped.has(o.groupe))grouped.set(o.groupe,[]);
+    grouped.get(o.groupe).push(o);
   });
-  const addBtn=document.createElement('div');addBtn.className='gc-add-btn';addBtn.title='Lier une autre vue';addBtn.textContent='+';
-  addBtn.addEventListener('click',openLinkModal);thumbs.appendChild(addBtn);
+  if(!grouped.size){toast('Aucun groupe à migrer',true);return;}
+  const n=grouped.size;
+  if(!confirm(`Migrer ${n} groupe${n>1?'s':''} ?\n\nChaque groupe sera fusionné en une seule œuvre avec un tableau de vues. Les entrées redondantes seront supprimées de Firestore.`))return;
+
+  setSyncState('saving');
+  let done=0;
+  for(const[groupe,members] of grouped){
+    // Choisir le représentant : celui qui a le plus de métadonnées
+    const score=o=>[o.titre,o.technique,o.annee,o.statut,o.prix].filter(Boolean).length;
+    members.sort((a,b)=>score(b)-score(a));
+    const rep=members[0];
+    // Fusionner les vues
+    const vues=members.map((m,i)=>({
+      id:'v_'+Math.random().toString(36).slice(2),
+      imgUrl:m.imgUrl||'',
+      fichier:m.fichier||'',
+      dossier:m.dossier||'',
+      principale:m.groupePrincipal===true||m.groupePrincipal==='true'||(i===0),
+    }));
+    // S'assurer qu'il y a exactement une principale
+    if(!vues.some(v=>v.principale))vues[0].principale=true;
+    // Mettre à jour le représentant
+    const{id,...repData}=rep;
+    const mergedData={...repData,vues,groupe:'',groupePrincipal:false,imgUrl:''};
+    const wb=writeBatch(fdb);
+    wb.set(doc(fdb,'oeuvres',rep.id),mergedData);
+    // Supprimer les autres entrées
+    members.slice(1).forEach(m=>wb.delete(doc(fdb,'oeuvres',m.id)));
+    await wb.commit();
+    done++;
+  }
+  setSyncState('saved');
+  document.getElementById('btn-migrate').style.display='none';
+  toast(`✓ Migration terminée — ${done} groupe${done>1?'s':''} fusionné${done>1?'s':''}`);
+};
+
+// Détecter si migration nécessaire après chargement
+function checkMigrationNeeded(){
+  const needsMigration=oeuvres.some(o=>o.groupe);
+  document.getElementById('btn-migrate').style.display=needsMigration?'':'none';
 }
 
-window.setGroupPrincipal=async(memberId,groupe)=>{
-  setSyncState('saving');
-  const batch=writeBatch(fdb);
-  oeuvres.filter(x=>x.groupe===groupe).forEach(x=>batch.update(doc(fdb,'oeuvres',x.id),{groupePrincipal:x.id===memberId}));
-  await batch.commit();setSyncState('saved');toast('✓ Photo principale définie');
+// ── GROUP CAROUSEL (vues de l'œuvre courante) ─────────────────
+function refreshCarousel(){
+  const o=editBuf;
+  const car=document.getElementById('group-carousel');
+  const vues=o.vues||[];
+  // Afficher aussi les groupes cross-entrées (ancienne structure)
+  const crossMembers=o.groupe?oeuvres.filter(x=>x.groupe===o.groupe&&x.id!==o.id):[];
+
+  if(vues.length<=1&&!crossMembers.length){car.style.display='none';return;}
+  car.style.display='flex';
+  const totalV=vues.length+crossMembers.reduce((n,m)=>(m.vues?.length||1)+n,0);
+  document.getElementById('gc-group-name').textContent=`${totalV} vue${totalV>1?'s':''}`;
+  const thumbs=document.getElementById('gc-thumbs');thumbs.innerHTML='';
+
+  // Vues internes à cette œuvre
+  vues.forEach((v,i)=>{
+    const div=document.createElement('div');
+    div.className='gc-thumb'+(i===panelVueIdx?' active':'');
+    div.title=v.fichier||`Vue ${i+1}`;
+    div.innerHTML=`${v.imgUrl&&v.imgUrl.startsWith('data:')?`<img src="${v.imgUrl}" alt="">`:'<div class="gc-thumb-empty">🖼</div>'}
+      <span class="gc-star${v.principale?' on':''}" title="Vue principale" onclick="event.stopPropagation();setVuePrincipale(${i})">★</span>
+      ${vues.length>1?`<span class="gc-del" title="Supprimer cette vue" onclick="event.stopPropagation();deleteVue(${i})">✕</span>`:''}`;
+    div.addEventListener('click',()=>{panelVueIdx=i;fillPanel();});
+    thumbs.appendChild(div);
+  });
+
+  // Bouton ajouter
+  const addBtn=document.createElement('div');addBtn.className='gc-add-btn';addBtn.title='Ajouter une vue';addBtn.textContent='+';
+  addBtn.addEventListener('click',()=>triggerImageUpload());
+  thumbs.appendChild(addBtn);
+  render();
+}
+
+window.setVuePrincipale=(idx)=>{
+  const vues=editBuf.vues||[];
+  vues.forEach((v,i)=>v.principale=(i===idx));
+  editBuf.vues=vues;panelVueIdx=idx;
+  markDirty('vues',vues);fillPanel();
 };
 
-window.unlinkFromGroup=async()=>{
-  if(!editBuf.groupe)return;
-  if(!confirm(`Retirer cette vue du groupe « ${editBuf.groupe} » ?`))return;
+window.deleteVue=async(idx)=>{
+  const vues=editBuf.vues||[];
+  if(vues.length<=1){toast('Impossible de supprimer la seule vue',true);return;}
+  if(!confirm('Supprimer cette vue ?'))return;
+  vues.splice(idx,1);
+  if(!vues.some(v=>v.principale))vues[0].principale=true;
+  editBuf.vues=vues;
+  if(panelVueIdx>=vues.length)panelVueIdx=vues.length-1;
   setSyncState('saving');
-  const batch=writeBatch(fdb);
-  batch.update(doc(fdb,'oeuvres',editBuf.id),{groupe:'',groupePrincipal:false});
-  await batch.commit();
-  editBuf={...editBuf,groupe:'',groupePrincipal:false};
-  document.getElementById('f-groupe').value='';document.getElementById('f-groupe-principal').checked=false;
-  refreshCarousel();setSyncState('saved');toast('Vue retirée du groupe');
+  await fsSetOeuvre(editBuf);
+  setSyncState('saved');
+  fillPanel();toast('✓ Vue supprimée');
 };
-
 // ── LINK MODAL ────────────────────────────────────────────────
 let linkSelected=new Set();
 
@@ -1360,30 +1459,41 @@ async function importCSVData(text){
 }
 
 function normalizeItem(item){
+  // Supporte l'ancienne structure plate ET la nouvelle avec vues[]
+  const vues=item.vues||[{
+    id:       'v_'+Math.random().toString(36).slice(2),
+    imgUrl:   item.imgUrl||'',
+    fichier:  item.fichier||item.Name||item.name||'',
+    dossier:  item.dossier||'',
+    principale: true,
+  }];
   return {
-    id:             item.id||'img_'+Math.random().toString(36).slice(2),
-    ref:            item.ref||'',
-    fichier:        item.fichier||item.Name||item.name||'',
-    serie:          item.serie||item.Serie||'',
-    dossier:        item.dossier||'',
-    chemin_rel:     item.chemin_rel||'',
-    titre:          item.titre||'',
-    annee:          item.annee||item.date_fichier?.slice(0,4)||'',
-    technique:      item.technique||'',
-    hauteur:        item.hauteur||'',
-    largeur:        item.largeur||'',
-    profondeur:     item.profondeur||'',
-    prix:           item.prix||'',
-    statut:         item.statut||'',
-    localisation:   item.localisation||'',
-    notes:          item.notes||'',
-    imgUrl:         item.imgUrl||'',
-    groupe:         item.groupe||'',
-    groupePrincipal:item.groupePrincipal||false,
-    imgHD:          item.imgHD||'',
-    driveId:        item.driveId||'',
+    id:          item.id||'img_'+Math.random().toString(36).slice(2),
+    ref:         item.ref||'',
+    groupe:      item.groupe||'',
+    titre:       item.titre||'',
+    serie:       item.serie||item.Serie||'',
+    annee:       item.annee||item.date_fichier?.slice(0,4)||'',
+    technique:   item.technique||'',
+    hauteur:     item.hauteur||'',
+    largeur:     item.largeur||'',
+    profondeur:  item.profondeur||'',
+    prix:        item.prix||'',
+    statut:      item.statut||'',
+    localisation:item.localisation||'',
+    notes:       item.notes||'',
+    imgHD:       item.imgHD||'',
+    driveId:     item.driveId||'',
+    vues,
   };
 }
+
+// Accesseur rapide : image principale d'une œuvre
+function mainVue(o){
+  if(!o.vues||!o.vues.length)return{imgUrl:o.imgUrl||'',fichier:o.fichier||''};
+  return o.vues.find(v=>v.principale)||o.vues[0];
+}
+function mainImg(o){return mainVue(o).imgUrl||'';}
 
 function parseCSVLine(line){
   const r=[];let c='',q=false;
@@ -1444,7 +1554,7 @@ function getExportOeuvres(){
     if(seen.has(o.groupe))return;
     seen.add(o.groupe);
     const vues=raw.filter(x=>x.groupe===o.groupe);
-    const rep=vues.find(x=>x.groupePrincipal===true||x.groupePrincipal==='true')||vues[0];
+    const rep=vues.find(x=>mainImg(x))||vues[0];
     out.push({rep,vues});
   });
   return out;
@@ -1869,9 +1979,12 @@ async function runBulkUpload(files){
   // Normalise filename: lowercase, strip extension
   const norm=n=>n.toLowerCase().replace(/\.[^.]+$/,'').trim();
 
-  // Lookup map: normalised filename → oeuvre
+  // Lookup map: normalised filename → {oeuvre, vueIdx}
   const lookup=new Map();
-  oeuvres.forEach(o=>{if(o.fichier)lookup.set(norm(o.fichier),o);});
+  oeuvres.forEach(o=>{
+    if(o.fichier)lookup.set(norm(o.fichier),{oeuvre:o,vueIdx:-1});
+    (o.vues||[]).forEach((v,i)=>{if(v.fichier)lookup.set(norm(v.fichier),{oeuvre:o,vueIdx:i});});
+  });
 
   for(let i=0;i<files.length;i++){
     const file=files[i];
@@ -1879,16 +1992,18 @@ async function runBulkUpload(files){
     labelTxt.textContent=file.name;
     labelCount.textContent=`${i+1} / ${files.length}`;
     const row=document.createElement('div');
-    const oeuvre=lookup.get(norm(file.name));
+    const hit=lookup.get(norm(file.name));
 
-    if(!oeuvre){
+    if(!hit){
       skipped++;skippedNames.push(file.name);
       row.className='bulk-result-row bulk-result-skip';
       row.textContent=`⊘ ${file.name} — aucune correspondance`;
       resultsList.appendChild(row);continue;
     }
-    // Une URL Drive n'est pas une image web utilisable — on la remplace
-    const isRealImg = oeuvre.imgUrl && oeuvre.imgUrl.startsWith('data:');
+    const{oeuvre,vueIdx}=hit;
+    // Vérifier si image déjà présente dans la vue correspondante
+    const targetVue=vueIdx>=0?(oeuvre.vues||[])[vueIdx]:null;
+    const isRealImg=targetVue?targetVue.imgUrl?.startsWith('data:'):oeuvre.imgUrl?.startsWith('data:');
     if(isRealImg){
       already++;
       row.className='bulk-result-row bulk-result-skip';
@@ -1897,12 +2012,15 @@ async function runBulkUpload(files){
     }
     try{
       const{dataUrl,kb}=await resizeImageSmart(file);
+      const vues=oeuvre.vues?[...oeuvre.vues]:[{id:'v0',imgUrl:'',fichier:oeuvre.fichier||'',dossier:oeuvre.dossier||'',principale:true}];
+      if(vueIdx>=0&&vues[vueIdx])vues[vueIdx].imgUrl=dataUrl;
+      else vues[0].imgUrl=dataUrl;
       const wb=writeBatch(fdb);
-      wb.update(doc(fdb,'oeuvres',oeuvre.id),{imgUrl:dataUrl});
+      wb.update(doc(fdb,'oeuvres',oeuvre.id),{vues,imgUrl:''});
       await wb.commit();
       matched++;
       row.className='bulk-result-row bulk-result-ok';
-      row.textContent=`✓ ${file.name} → ${oeuvre.titre||oeuvre.fichier} (${kb} Ko)`;
+      row.textContent=`✓ ${file.name} → ${oeuvre.titre||oeuvre.fichier||file.name} (${kb} Ko)`;
     }catch(e){
       skipped++;
       row.className='bulk-result-row bulk-result-skip';
