@@ -34,12 +34,13 @@ button:hover{background:#e8d5a3}
 
 <button onclick="runDiag()">▶ Lancer le diagnostic</button>
 <button onclick="document.getElementById('log').innerHTML=''">Effacer log</button>
+<button onclick="cleanDuplicates()" style="background:#c0392b;color:#fff">🗑 Supprimer les 292 doublons vides</button>
 
 <div id="results"></div>
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, collection, getDocs }
+import { getFirestore, collection, getDocs, writeBatch, doc }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const CONF={
@@ -223,6 +224,36 @@ function renderSample(oeuvres){
     </tr>`).join('')}
   </table>`;
 }
+window.cleanDuplicates = async function(){
+  if(!confirm('Supprimer tous les documents sans fichier, sans imgUrl et avec vues[1] ?\nCette action est irréversible.')) return;
+
+  log('Chargement des documents...','ok');
+  const oSnap = await getDocs(collection(fdb,'oeuvres'));
+  const oeuvres = oSnap.docs.map(d=>({id:d.id,...d.data()}));
+
+  // Doublons = pas de fichier, imgUrl vide, vues[] avec 1 entrée vide
+  const doublons = oeuvres.filter(o=>
+    (!o.fichier || o.fichier==='') &&
+    (!o.imgUrl  || o.imgUrl==='')
+  );
+
+  log(`${doublons.length} doublons identifiés`, doublons.length>0?'warn':'ok');
+
+  if(doublons.length===0){ log('Rien à supprimer.','ok'); return; }
+
+  // Supprimer par batch de 400
+  let deleted=0;
+  for(let i=0;i<doublons.length;i+=400){
+    const chunk=doublons.slice(i,i+400);
+    const wb=writeBatch(fdb);
+    chunk.forEach(o=>wb.delete(doc(fdb,'oeuvres',o.id)));
+    await wb.commit();
+    deleted+=chunk.length;
+    log(`  Supprimés : ${deleted} / ${doublons.length}...`);
+  }
+
+  log(`✓ ${deleted} doublons supprimés. Relance le diagnostic.`,'ok');
+};
 </script>
 </body>
 </html>
