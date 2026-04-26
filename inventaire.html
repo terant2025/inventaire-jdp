@@ -906,7 +906,7 @@ function makeCard(item){
     ${multi?`<div class="group-badge">⊞ ${totalVues} vue${totalVues>1?'s':''}</div>`:''}
     <div class="card-body">
       <div class="card-serie">${rep.serie||'—'}</div>
-      <div class="card-title">${rep.titre||`<em>${rep.fichier||'Sans titre'}</em>`}</div>
+      <div class="card-title">${rep.titre||`<em>${mainVue(rep).fichier||'Sans titre'}</em>`}</div>
       <div class="card-meta"><span class="card-year">${rep.annee||'—'}</span>${rep.statut?`<span class="status-dot ${sc(rep.statut)}" title="${sl(rep.statut)}"></span>`:''}</div>
     </div>
     <button class="card-edit-btn" onclick="event.stopPropagation();openPanel(${item.filteredIdx})">✎</button>`;
@@ -922,7 +922,7 @@ function makeRow(item){
   const d=document.createElement('div');
   d.className='list-row'+(isSelected?' selected':'');
   d.innerHTML=`${img?`<img class="list-thumb" src="${img}" loading="lazy" alt="">`:'<div class="list-thumb-empty">🖼</div>'}
-    <div class="list-title">${rep.titre||`<em>${rep.fichier||'Sans titre'}</em>`}<small>${rep.serie||'—'}${multi?` · <strong style="color:var(--gold)">${totalVues} vues</strong>`:''}</small></div>
+    <div class="list-title">${rep.titre||`<em>${mainVue(rep).fichier||'Sans titre'}</em>`}<small>${rep.serie||'—'}${multi?` · <strong style="color:var(--gold)">${totalVues} vues</strong>`:''}</small></div>
     <div class="list-cell">${rep.technique||'—'}</div>
     <div class="list-cell">${dimLabel(rep)}</div>
     <div class="list-cell">${rep.annee||'—'}</div>
@@ -1485,6 +1485,9 @@ async function importJSON(text){
   progWrap.style.display='block';setSyncState('saving');
   let added=0,updated=0;
 
+  // Détecter si c'est un fichier drive-urls.json (contient imgHD)
+  const isDriveImport = items.length>0 && items[0].imgHD && !items[0].serie;
+
   const BATCH=400;
   for(let start=0;start<items.length;start+=BATCH){
     const chunk=items.slice(start,start+BATCH);
@@ -1492,12 +1495,28 @@ async function importJSON(text){
     chunk.forEach((item,ci)=>{
       bar.style.width=Math.round(((start+ci+1)/items.length)*100)+'%';
       label.textContent=`Import ${start+ci+1}/${items.length} — ${item.fichier||''}`;
-      const obj=normalizeItem(item);
-      if(obj.serie&&!series.includes(obj.serie)) series.push(obj.serie);
-      const exists=oeuvres.find(o=>o.fichier===obj.fichier);
-      if(exists)updated++;else added++;
-      const{id,...data}=obj;
-      wb.set(doc(fdb,'oeuvres',id),data);
+
+      if(isDriveImport){
+        // Mise à jour uniquement du champ imgHD par correspondance fichier+dossier
+        const existing=oeuvres.find(o=>
+          o.fichier===item.fichier &&
+          (o.dossier===item.dossier || !item.dossier)
+        );
+        if(existing){
+          wb.update(doc(fdb,'oeuvres',existing.id),{
+            imgHD:   item.imgHD,
+            driveId: item.driveId||''
+          });
+          updated++;
+        }
+      } else {
+        const obj=normalizeItem(item);
+        if(obj.serie&&!series.includes(obj.serie)) series.push(obj.serie);
+        const exists=oeuvres.find(o=>o.fichier===obj.fichier);
+        if(exists)updated++;else added++;
+        const{id,...data}=obj;
+        wb.set(doc(fdb,'oeuvres',id),data);
+      }
     });
     await wb.commit();
   }
@@ -1505,7 +1524,10 @@ async function importJSON(text){
   await fsSetSeriesConfig();
   setSyncState('saved');
   progWrap.style.display='none';bar.style.width='0%';
-  toast(`✓ ${added} ajoutées · ${updated} mises à jour`);
+  if(isDriveImport)
+    toast(`✓ ${updated} URLs Google Drive liées aux œuvres`);
+  else
+    toast(`✓ ${added} ajoutées · ${updated} mises à jour`);
 }
 
 async function importCSVData(text){
@@ -1559,15 +1581,18 @@ function normalizeItem(item){
     statut:      item.statut||'',
     localisation:item.localisation||'',
     notes:       item.notes||'',
+    imgHD:       item.imgHD||'',
+    driveId:     item.driveId||'',
     vues,
   };
 }
 
-// Accesseur image principale — structure plate Firebase (pas de vues[])
-function mainImg(o){
-  // Chaque document Firebase a imgUrl directement (base64)
-  return o.imgUrl||'';
+// Accesseur rapide : image principale d'une œuvre
+function mainVue(o){
+  if(!o.vues||!o.vues.length)return{imgUrl:o.imgUrl||'',fichier:o.fichier||''};
+  return o.vues.find(v=>v.principale)||o.vues[0];
 }
+function mainImg(o){return mainVue(o).imgUrl||'';}
 
 function parseCSVLine(line){
   const r=[];let c='',q=false;
@@ -1642,10 +1667,10 @@ function updateExpCount(){
 window.doExportHTML=()=>{
   const data=getExportOeuvres();
   if(!data.length){toast('Aucune œuvre à exporter',true);return;}
-  const showPrix=document.getElementById('exp-prix').checked;
-  const showStatut=document.getElementById('exp-statut-opt').checked;
-  const showDims=document.getElementById('exp-dims').checked;
-  const showNotes=document.getElementById('exp-notes').checked;
+  const showPrix   = document.getElementById('exp-prix').checked;
+  const showStatut = document.getElementById('exp-statut-opt').checked;
+  const showDims   = document.getElementById('exp-dims').checked;
+  const showNotes  = document.getElementById('exp-notes').checked;
   const filtreLabel=[
     document.getElementById('exp-serie').value||'',
     document.getElementById('exp-annee').value||'',
@@ -1656,55 +1681,54 @@ window.doExportHTML=()=>{
   const statusLabel={disponible:'Disponible',vendu:'Vendu',expose:'Exposé',collection:'Collection privée'};
   const statusColor={disponible:'#2d6a4f',vendu:'#c0392b',expose:'#2c5f8a',collection:'#6b3fa0'};
 
-  // Construire structure lightbox
-  // Chaque entrée = 1 œuvre (ou groupe), avec ses vues = documents Firebase plats
-  // imgUrl est directement sur chaque document (pas de vues[])
-  const lbData=data.map(({rep,vues})=>{
-    const dims=[rep.hauteur,rep.largeur,rep.profondeur].filter(Boolean).join(' × ');
+  // ── Structure lightbox ────────────────────────────────────────
+  // Chaque entrée = 1 œuvre (ou groupe de vues)
+  // imgUrl est directement sur chaque document Firebase (base64)
+  const lbData = data.map(({rep, vues}) => {
+    const dims = [rep.hauteur, rep.largeur, rep.profondeur].filter(Boolean).join(' × ');
     return {
-      meta:{
-        serie:  rep.serie||'',
-        titre:  rep.titre||rep.fichier||'Sans titre',
-        annee:  rep.annee||'',
+      meta: {
+        serie:     rep.serie||'',
+        titre:     rep.titre||rep.fichier||'Sans titre',
+        annee:     rep.annee||'',
         technique: rep.technique||'',
         dims,
-        prix:   rep.prix||'',
-        statut: rep.statut||''
+        statut:    rep.statut||''
       },
-      // Chaque vue = un document Firebase avec imgUrl directement
-      vues: vues.map(v=>({ img: v.imgUrl||'' }))
+      // Chaque vue = un document Firebase plat avec imgUrl directement
+      vues: vues.map(v => ({ img: v.imgUrl||'' }))
     };
   });
 
-  // Cartes grille
-  const cartes=data.map(({rep,vues},oi)=>{
-    const dims=[rep.hauteur,rep.largeur,rep.profondeur].filter(Boolean).join(' × ');
-    const thumb=mainImg(rep);  // imgUrl directement depuis Firestore
-    const nbVues=vues.filter(v=>v.imgUrl).length; // nb de docs dans le groupe avec image
+  // ── Cartes grille ─────────────────────────────────────────────
+  const cartes = data.map(({rep, vues}, oi) => {
+    const dims   = [rep.hauteur, rep.largeur, rep.profondeur].filter(Boolean).join(' × ');
+    const thumb  = rep.imgUrl||'';   // image principale directement depuis Firebase
+    const nbVues = vues.filter(v => v.imgUrl).length;
     return `<div class="card" data-serie="${(rep.serie||'').replace(/"/g,'&quot;')}" onclick="openLB(${oi},0)">
       <div class="card-img">
-        ${thumb?`<img src="${thumb}" alt="${(rep.titre||rep.fichier||'').replace(/"/g,'&quot;')}" loading="lazy">`:'<div class="card-img-ph">🖼</div>'}
-        ${nbVues>1?`<span class="card-multi">+${nbVues-1} vue${nbVues>2?'s':''}</span>`:''}
+        ${thumb ? `<img src="${thumb}" alt="${(rep.titre||rep.fichier||'').replace(/"/g,'&quot;')}" loading="lazy">` : '<div class="card-img-ph">🖼</div>'}
+        ${nbVues > 1 ? `<span class="card-multi">+${nbVues-1} vue${nbVues>2?'s':''}</span>` : ''}
       </div>
       <div class="card-body">
         <div class="card-serie">${rep.serie||'—'}</div>
         <div class="card-title">${rep.titre||`<em>${rep.fichier||'Sans titre'}</em>`}</div>
-        ${rep.annee||rep.technique?`<div class="card-tech">${[rep.annee,rep.technique].filter(Boolean).join(' — ')}</div>`:''}
-        ${showDims&&dims?`<div class="card-dims">${dims} cm</div>`:''}
-        ${showPrix&&rep.prix?`<div class="card-prix">${Number(rep.prix).toLocaleString('fr-FR')} €</div>`:''}
-        ${showStatut&&rep.statut?`<div class="card-statut" style="color:${statusColor[rep.statut]||'#8a847a'}">${statusLabel[rep.statut]||rep.statut}</div>`:''}
+        ${rep.annee||rep.technique ? `<div class="card-tech">${[rep.annee,rep.technique].filter(Boolean).join(' — ')}</div>` : ''}
+        ${showDims&&dims ? `<div class="card-dims">${dims} cm</div>` : ''}
+        ${showPrix&&rep.prix ? `<div class="card-prix">${Number(rep.prix).toLocaleString('fr-FR')} €</div>` : ''}
+        ${showStatut&&rep.statut ? `<div class="card-statut" style="color:${statusColor[rep.statut]||'#8a847a'}">${statusLabel[rep.statut]||rep.statut}</div>` : ''}
       </div>
     </div>`;
   }).join('');
 
-  const serieNav=seriesPresentes.map(s=>
+  const serieNav = seriesPresentes.map(s =>
     `<button class="tab" onclick="filterSerie(this,'${s.replace(/'/g,"\\'")}') ">${s}</button>`
   ).join('');
 
-  const n=data.length;
-  const lbJson=JSON.stringify(lbData);
+  const n = data.length;
+  const lbJson = JSON.stringify(lbData);
 
-  const html=`<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -1717,21 +1741,29 @@ window.doExportHTML=()=>{
 :root{
   --bg:#0c0c0b;--bg2:#141412;--surface:#1a1a17;
   --border:#252520;--border2:#32322c;
-  --text:#e6e0d8;--muted:#6e6860;--accent:#a09080;--gold:#c4a45a;--gold2:#8a6e38;
-  --serif:'Cormorant Garamond',Georgia,serif;--sans:'Montserrat',sans-serif;
+  --text:#e6e0d8;--muted:#6e6860;--accent:#a09080;
+  --gold:#c4a45a;--gold2:#8a6e38;
+  --serif:'Cormorant Garamond',Georgia,serif;
+  --sans:'Montserrat',sans-serif;
 }
 html{scroll-behavior:smooth}
 body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12px;font-weight:300;letter-spacing:.04em;min-height:100vh}
+
+/* HEADER */
 .site-header{padding:40px 52px 24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-end;justify-content:space-between;gap:24px;background:rgba(12,12,11,.96);position:sticky;top:0;z-index:20;backdrop-filter:blur(10px)}
 .site-eyebrow{font-size:8px;letter-spacing:.3em;text-transform:uppercase;color:var(--gold);margin-bottom:6px}
 .site-title{font-family:var(--serif);font-size:clamp(20px,3vw,30px);font-weight:300;letter-spacing:.14em}
 .site-meta{font-size:9px;color:var(--muted);text-align:right}
 .site-meta strong{display:block;font-family:var(--serif);font-size:20px;font-weight:300;color:var(--text);line-height:1;margin-bottom:3px}
+
+/* FILTER BAR */
 .filter-bar{padding:11px 52px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
 .filter-label{font-size:8px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-right:3px}
 .tab{background:none;border:1px solid var(--border);padding:5px 12px;font-family:var(--sans);font-size:8px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);cursor:pointer;transition:all .2s}
 .tab:hover,.tab.active{background:var(--gold);border-color:var(--gold);color:var(--bg)}
 .count{font-size:9px;color:var(--muted);margin-left:auto;padding:4px 10px;background:var(--surface);border:1px solid var(--border)}
+
+/* GALLERY */
 .gallery{padding:18px 52px 60px;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:2px}
 .card{background:var(--surface);border:2px solid transparent;cursor:pointer;transition:border-color .2s;overflow:hidden}
 .card:hover{border-color:var(--gold)}.card.hidden{display:none}
@@ -1750,59 +1782,69 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12
 .card-statut{font-size:8px;letter-spacing:.1em;text-transform:uppercase;margin-top:3px}
 
 /* LIGHTBOX */
-#lb{display:none;position:fixed;inset:0;z-index:1000;background:rgba(6,6,5,.98);flex-direction:column;align-items:center;justify-content:center}
+#lb{display:none;position:fixed;inset:0;z-index:1000;background:rgba(6,6,5,.98);flex-direction:column}
 #lb.open{display:flex}
-.lb-img-zone{flex:1;width:100%;display:flex;align-items:center;justify-content:center;position:relative;padding:0 70px;min-height:0;overflow:hidden}
-#lb-img{max-width:100%;max-height:calc(100vh - 200px);object-fit:contain;display:block;transition:opacity .2s;box-shadow:0 0 60px rgba(0,0,0,.5)}
+
+/* Image zone */
+.lb-img-zone{flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:0 70px;min-height:0;overflow:hidden}
+#lb-img{max-width:100%;max-height:calc(100vh - 190px);object-fit:contain;display:block;transition:opacity .2s;box-shadow:0 0 60px rgba(0,0,0,.5)}
 #lb-img.fade{opacity:0}
+
+/* Arrows — navigation entre œuvres */
 .lb-arrow{position:absolute;top:50%;transform:translateY(-50%);background:rgba(18,18,16,.85);border:1px solid var(--border2);color:var(--muted);width:48px;height:48px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;transition:all .2s}
 .lb-arrow:hover{background:var(--surface);color:var(--text);border-color:var(--accent)}
 #lb-prev{left:12px}#lb-next{right:12px}
+
+/* Close + counter */
 #lb-close{position:absolute;top:18px;right:24px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;transition:color .2s;z-index:10}
 #lb-close:hover{color:var(--text)}
-#lb-counter-global{position:absolute;top:22px;left:50%;transform:translateX(-50%);font-size:9px;letter-spacing:.2em;color:var(--muted);text-transform:uppercase;pointer-events:none}
-.lb-bottom{width:100%;flex-shrink:0;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:14px 80px;background:linear-gradient(to top,rgba(6,6,5,.95),transparent)}
-.lb-meta{}
-.lb-meta-serie{font-size:8px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);margin-bottom:5px}
-.lb-meta-titre{font-family:var(--serif);font-size:19px;font-weight:300;color:var(--text);margin-bottom:5px;line-height:1.2}
+#lb-counter{position:absolute;top:22px;left:50%;transform:translateX(-50%);font-size:9px;letter-spacing:.2em;color:var(--muted);text-transform:uppercase;pointer-events:none}
+
+/* Bottom panel : méta + vignettes vues */
+.lb-bottom{width:100%;flex-shrink:0;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:12px 80px 16px;background:linear-gradient(to top,rgba(6,6,5,.98) 60%,transparent)}
+.lb-meta-serie{font-size:8px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);margin-bottom:4px}
+.lb-meta-titre{font-family:var(--serif);font-size:19px;font-weight:300;color:var(--text);margin-bottom:4px;line-height:1.2}
 .lb-meta-details{font-size:10px;color:var(--muted);line-height:1.9}
 .lb-meta-details strong{color:var(--accent);font-weight:300}
-.lb-vues-strip{display:flex;align-items:center;gap:3px;flex-shrink:0}
-.lb-vue-thumb{width:50px;height:50px;object-fit:cover;cursor:pointer;opacity:.32;border:1px solid transparent;transition:all .2s;flex-shrink:0}
-.lb-vue-thumb.active,.lb-vue-thumb:hover{opacity:1;border-color:var(--gold)}
+
+/* Vignettes vues (même groupe) */
+.lb-vues{display:flex;align-items:center;gap:3px;flex-shrink:0}
+.lb-vue{width:50px;height:50px;object-fit:cover;cursor:pointer;opacity:.32;border:1px solid transparent;transition:all .2s;flex-shrink:0}
+.lb-vue.active,.lb-vue:hover{opacity:1;border-color:var(--gold)}
 .lb-vue-ph{width:50px;height:50px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:14px;opacity:.2;cursor:pointer;border:1px solid transparent;transition:all .2s}
 .lb-vue-ph.active,.lb-vue-ph:hover{opacity:.6;border-color:var(--gold)}
+
+/* FOOTER */
 .site-footer{padding:26px 52px;border-top:1px solid var(--border);text-align:center;font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
-/* TABLETTE */
+
+/* RESPONSIVE — tablette */
 @media(max-width:1024px){
   .site-header,.filter-bar,.gallery,.site-footer{padding-left:28px;padding-right:28px}
   .gallery{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
-  .lb-bottom{padding:12px 40px}
+  .lb-bottom{padding:12px 40px 14px}
   .lb-img-zone{padding:0 58px}
 }
-/* MOBILE */
+/* RESPONSIVE — mobile */
 @media(max-width:640px){
-  .site-header{padding:20px 16px 16px;flex-direction:column;align-items:flex-start;gap:8px}
+  .site-header{padding:20px 16px 14px;flex-direction:column;align-items:flex-start;gap:8px}
   .site-meta{text-align:left}
   .filter-bar,.gallery,.site-footer{padding-left:12px;padding-right:12px}
-  .filter-bar{gap:4px}
   .tab{padding:4px 9px;font-size:7px}
-  .gallery{grid-template-columns:repeat(2,1fr);gap:2px}
+  .gallery{grid-template-columns:repeat(2,1fr)}
   .card-body{padding:7px 9px 10px}
-  .card-title{font-size:13px}
-  .lb-img-zone{padding:0 42px;max-height:calc(100vh - 180px)}
+  .lb-img-zone{padding:0 42px}
   #lb-img{max-height:calc(100vh - 180px)}
-  .lb-bottom{padding:8px 12px;flex-direction:column;gap:8px;align-items:flex-start}
+  .lb-bottom{padding:8px 14px 10px;flex-direction:column;gap:8px;align-items:flex-start}
   .lb-meta-titre{font-size:16px}
   .lb-meta-details{font-size:9px}
   .lb-arrow{width:34px;height:34px;font-size:14px}
   #lb-prev{left:3px}#lb-next{right:3px}
-  .lb-vue-thumb,.lb-vue-ph{width:40px;height:40px}
-  #lb-counter-global{font-size:8px}
+  .lb-vue{width:40px;height:40px}
 }
 </style>
 </head>
 <body>
+
 <div class="site-header">
   <div>
     <div class="site-eyebrow">Art Textile Contemporain</div>
@@ -1810,18 +1852,21 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12
   </div>
   <div class="site-meta"><strong id="total-count">${n}</strong>œuvre${n>1?'s':''} · ${filtreLabel}</div>
 </div>
+
 <div class="filter-bar">
   <span class="filter-label">Série</span>
   <button class="tab active" onclick="filterSerie(this,'')">Toutes</button>
   ${serieNav}
   <span class="count" id="cnt">${n} œuvre${n>1?'s':''}</span>
 </div>
+
 <div class="gallery" id="gallery">${cartes}</div>
+
 <div class="site-footer">Julie de Pierrepont — Art Textile Contemporain · ${new Date().getFullYear()}</div>
 
 <div id="lb">
   <button id="lb-close" onclick="closeLB()">✕</button>
-  <div id="lb-counter-global"></div>
+  <div id="lb-counter"></div>
   <div class="lb-img-zone">
     <button class="lb-arrow" id="lb-prev" onclick="lbNavOeuvre(-1)">←</button>
     <img id="lb-img" src="" alt="">
@@ -1833,80 +1878,108 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12
       <div class="lb-meta-titre" id="lb-titre"></div>
       <div class="lb-meta-details" id="lb-details"></div>
     </div>
-    <div class="lb-vues-strip" id="lb-vues-strip"></div>
+    <div class="lb-vues" id="lb-vues"></div>
   </div>
 </div>
 
 <script>
 const LB=${lbJson};
-let lbOeuvre=0,lbVue=0;
-function openLB(oi,vi){
-  lbOeuvre=oi;lbVue=vi||0;
+let lbOeuvre=0, lbVue=0;
+
+function openLB(oi, vi){
+  lbOeuvre=oi; lbVue=vi||0;
   document.getElementById('lb').classList.add('open');
   document.body.style.overflow='hidden';
-  document.addEventListener('keydown',lbKey);
+  document.addEventListener('keydown', lbKey);
   renderLB();
 }
 function closeLB(){
   document.getElementById('lb').classList.remove('open');
   document.body.style.overflow='';
-  document.removeEventListener('keydown',lbKey);
+  document.removeEventListener('keydown', lbKey);
 }
-function lbNavOeuvre(d){lbOeuvre=(lbOeuvre+d+LB.length)%LB.length;lbVue=0;renderLB();}
-function lbNavVue(vi){lbVue=vi;renderLB();}
+
+// Flèches ← → = navigation entre œuvres
+function lbNavOeuvre(d){
+  lbOeuvre=(lbOeuvre+d+LB.length)%LB.length;
+  lbVue=0;
+  renderLB();
+}
+// Vignettes bas = navigation entre vues d'une même œuvre
+function lbNavVue(vi){ lbVue=vi; renderLB(); }
+
 function renderLB(){
-  const oeuvre=LB[lbOeuvre];
-  const vues=oeuvre.vues||[];
-  const vue=vues[lbVue]||vues[0]||{};
-  const meta=oeuvre.meta||{};
-  const img=document.getElementById('lb-img');
+  const oeuvre = LB[lbOeuvre];
+  const vues   = oeuvre.vues||[];
+  const vue    = vues[lbVue]||vues[0]||{};
+  const meta   = oeuvre.meta||{};
+
+  // Image plein écran
+  const img = document.getElementById('lb-img');
   img.classList.add('fade');
-  setTimeout(()=>{img.src=vue.img||'';img.classList.remove('fade');},180);
-  document.getElementById('lb-counter-global').textContent=(lbOeuvre+1)+' / '+LB.length;
-  document.getElementById('lb-serie').textContent=meta.serie||'';
-  document.getElementById('lb-titre').textContent=meta.titre||'';
+  setTimeout(()=>{ img.src=vue.img||''; img.classList.remove('fade'); }, 180);
+
+  // Compteur
+  document.getElementById('lb-counter').textContent = (lbOeuvre+1)+' / '+LB.length;
+
+  // Méta
+  document.getElementById('lb-serie').textContent = meta.serie||'';
+  document.getElementById('lb-titre').textContent = meta.titre||'';
   const det=[];
-  if(meta.annee)det.push('<strong>'+meta.annee+'</strong>');
-  if(meta.technique)det.push(meta.technique);
-  if(meta.dims)det.push(meta.dims+' cm');
-  document.getElementById('lb-details').innerHTML=det.join('&ensp;·&ensp;');
-  const strip=document.getElementById('lb-vues-strip');
+  if(meta.annee)     det.push('<strong>'+meta.annee+'</strong>');
+  if(meta.technique) det.push(meta.technique);
+  if(meta.dims)      det.push(meta.dims+' cm');
+  document.getElementById('lb-details').innerHTML = det.join('&ensp;·&ensp;');
+
+  // Vignettes vues (seulement si groupe avec plusieurs vues)
+  const strip = document.getElementById('lb-vues');
   strip.innerHTML='';
   if(vues.length>1){
     vues.forEach((v,i)=>{
       if(v.img){
         const t=document.createElement('img');
-        t.className='lb-vue-thumb'+(i===lbVue?' active':'');
-        t.src=v.img;t.title='Vue '+(i+1);t.onclick=()=>lbNavVue(i);
+        t.className='lb-vue'+(i===lbVue?' active':'');
+        t.src=v.img; t.title='Vue '+(i+1);
+        t.onclick=()=>lbNavVue(i);
         strip.appendChild(t);
       } else {
         const t=document.createElement('div');
         t.className='lb-vue-ph'+(i===lbVue?' active':'');
-        t.textContent='🖼';t.onclick=()=>lbNavVue(i);strip.appendChild(t);
+        t.textContent='🖼'; t.onclick=()=>lbNavVue(i);
+        strip.appendChild(t);
       }
     });
   }
 }
+
 function lbKey(e){
-  if(e.key==='Escape')closeLB();
-  else if(e.key==='ArrowRight')lbNavOeuvre(1);
-  else if(e.key==='ArrowLeft')lbNavOeuvre(-1);
-  else if(e.key==='ArrowUp'){lbNavVue(Math.max(0,lbVue-1));}
-  else if(e.key==='ArrowDown'){const v=LB[lbOeuvre]?.vues||[];lbNavVue(Math.min(v.length-1,lbVue+1));}
+  if(e.key==='Escape')    closeLB();
+  if(e.key==='ArrowRight') lbNavOeuvre(1);
+  if(e.key==='ArrowLeft')  lbNavOeuvre(-1);
+  if(e.key==='ArrowUp')   { const v=LB[lbOeuvre]?.vues||[]; lbNavVue(Math.max(0,lbVue-1)); }
+  if(e.key==='ArrowDown') { const v=LB[lbOeuvre]?.vues||[]; lbNavVue(Math.min(v.length-1,lbVue+1)); }
 }
-document.getElementById('lb').addEventListener('click',e=>{if(e.target===document.getElementById('lb'))closeLB();});
-// Swipe tactile mobile
+document.getElementById('lb').addEventListener('click', e=>{
+  if(e.target===document.getElementById('lb')) closeLB();
+});
+
+// Swipe mobile
 let tsX=0;
-document.getElementById('lb').addEventListener('touchstart',e=>{tsX=e.touches[0].clientX;},{passive:true});
-document.getElementById('lb').addEventListener('touchend',e=>{
+document.getElementById('lb').addEventListener('touchstart', e=>{ tsX=e.touches[0].clientX; },{passive:true});
+document.getElementById('lb').addEventListener('touchend', e=>{
   const dx=e.changedTouches[0].clientX-tsX;
-  if(Math.abs(dx)>50){dx<0?lbNavOeuvre(1):lbNavOeuvre(-1);}
+  if(Math.abs(dx)>50){ dx<0 ? lbNavOeuvre(1) : lbNavOeuvre(-1); }
 },{passive:true});
-function filterSerie(btn,serie){
+
+function filterSerie(btn, serie){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
   let n=0;
-  document.querySelectorAll('.card').forEach(c=>{const show=!serie||c.dataset.serie===serie;c.classList.toggle('hidden',!show);if(show)n++;});
+  document.querySelectorAll('.card').forEach(c=>{
+    const show=!serie||c.dataset.serie===serie;
+    c.classList.toggle('hidden',!show);
+    if(show) n++;
+  });
   document.getElementById('cnt').textContent=n+' œuvre'+(n>1?'s':'');
   document.getElementById('total-count').textContent=n;
 }
@@ -1914,10 +1987,10 @@ function filterSerie(btn,serie){
 </body>
 </html>`;
 
-  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download=`galerie.html`;
+  const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'galerie.html';
   a.click();
   closeModal('modal-export-html');
   toast(`✓ Galerie exportée — ${n} œuvre${n>1?'s':''}`);
