@@ -1245,24 +1245,28 @@ window.runMigration=async()=>{
 // Détecter si migration nécessaire après chargement
 function checkMigrationNeeded(){
   const needsMigration=oeuvres.some(o=>o.groupe);
-  document.getElementById('btn-migrate').style.display=needsMigration?'':'none';
+  document.getElementById('btn-migrate').style.display=needsMigration?'inline-flex':'none';
 }
+window.checkMigrationNeeded=checkMigrationNeeded;
 
-// ── GROUP CAROUSEL (vues de l'œuvre courante) ─────────────────
+// ── GROUP CAROUSEL (vues de l'œuvre courante + membres cross-entrées) ─
 function refreshCarousel(){
   const o=editBuf;
   const car=document.getElementById('group-carousel');
   const vues=o.vues||[];
-  // Afficher aussi les groupes cross-entrées (ancienne structure)
+  // Ancienne structure : membres du même groupe dans d'autres entrées Firestore
   const crossMembers=o.groupe?oeuvres.filter(x=>x.groupe===o.groupe&&x.id!==o.id):[];
 
-  if(vues.length<=1&&!crossMembers.length){car.style.display='none';return;}
+  const hasMultiVues=vues.length>1;
+  const hasCross=crossMembers.length>0;
+  if(!hasMultiVues&&!hasCross){car.style.display='none';return;}
   car.style.display='flex';
-  const totalV=vues.length+crossMembers.reduce((n,m)=>(m.vues?.length||1)+n,0);
+
+  const totalV=vues.length+crossMembers.reduce((n,m)=>n+(m.vues?.length||1),0);
   document.getElementById('gc-group-name').textContent=`${totalV} vue${totalV>1?'s':''}`;
   const thumbs=document.getElementById('gc-thumbs');thumbs.innerHTML='';
 
-  // Vues internes à cette œuvre
+  // Vues internes (nouvelle structure)
   vues.forEach((v,i)=>{
     const div=document.createElement('div');
     div.className='gc-thumb'+(i===panelVueIdx?' active':'');
@@ -1271,6 +1275,23 @@ function refreshCarousel(){
       <span class="gc-star${v.principale?' on':''}" title="Vue principale" onclick="event.stopPropagation();setVuePrincipale(${i})">★</span>
       ${vues.length>1?`<span class="gc-del" title="Supprimer cette vue" onclick="event.stopPropagation();deleteVue(${i})">✕</span>`:''}`;
     div.addEventListener('click',()=>{panelVueIdx=i;fillPanel();});
+    thumbs.appendChild(div);
+  });
+
+  // Membres cross-entrées (ancienne structure — avant migration)
+  crossMembers.forEach(m=>{
+    const img=m.imgUrl&&m.imgUrl.startsWith('data:')?m.imgUrl:'';
+    const div=document.createElement('div');
+    div.className='gc-thumb';
+    div.title=m.fichier||m.titre||'Vue';
+    div.innerHTML=`${img?`<img src="${img}" alt="">`:'<div class="gc-thumb-empty">🖼</div>'}
+      <span class="gc-star${m.groupePrincipal?' on':''}" title="Naviguer vers cette vue" onclick="event.stopPropagation()">★</span>`;
+    div.addEventListener('click',()=>{
+      const idx=filtered.findIndex(x=>x.id===m.id);
+      if(isDirty&&!confirm('Modifications non enregistrées. Continuer ?'))return;
+      if(idx>=0){panelIdx=idx;isDirty=false;editBuf={...filtered[idx]};panelVueIdx=0;fillPanel();render();}
+      else{isDirty=false;panelIdx=-1;editBuf={...m};panelVueIdx=0;fillPanel();}
+    });
     thumbs.appendChild(div);
   });
 
