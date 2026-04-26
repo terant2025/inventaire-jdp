@@ -33,6 +33,7 @@ button:hover{background:#e8d5a3}
 <button onclick="runPatch()">Restaurer metadonnees (fichier+dossier)</button>
 <button class="btn-danger" onclick="cleanDups()">Supprimer doublons vides</button>
 <button onclick="document.getElementById('log').innerHTML=''">Effacer log</button>
+<button onclick="runDiagVues()" style="background:#2c5f8a;color:#fff">🔍 Analyser vues + groupes</button>
 <div id="results"></div>
 <script type="module">
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -188,6 +189,72 @@ window.cleanDups=async function(){
     await wb.commit();
   }
   log(dups.length+' supprimes','ok');
+};
+
+window.runDiagVues=async function(){
+  log('Analyse vues et groupes...','ok');
+  const snap=await getDocs(collection(fdb,'oeuvres'));
+  const oeuvres=snap.docs.map(d=>({id:d.id,...d.data()}));
+
+  const avecVues    = oeuvres.filter(o=>o.vues&&o.vues.length>0);
+  const avecGroupe  = oeuvres.filter(o=>o.groupe&&o.groupe.trim());
+  const vues1       = oeuvres.filter(o=>o.vues&&o.vues.length===1);
+  const vues2plus   = oeuvres.filter(o=>o.vues&&o.vues.length>1);
+  const imgUrlGrand = oeuvres.filter(o=>o.imgUrl&&o.imgUrl.length>50000);
+  const imgUrlPetit = oeuvres.filter(o=>o.imgUrl&&o.imgUrl.length>10&&o.imgUrl.length<=50000);
+
+  let h='<div class="section"><h2>Vues et groupes</h2>';
+  h+='<div class="stat"><span class="label">Avec vues[] (any)</span><span class="val">'+avecVues.length+'</span></div>';
+  h+='<div class="stat"><span class="label">Avec vues[] > 1</span><span class="val">'+vues2plus.length+'</span></div>';
+  h+='<div class="stat"><span class="label">Avec groupe</span><span class="val">'+avecGroupe.length+'</span></div>';
+  h+='<div class="stat"><span class="label">imgUrl > 50Ko (grande)</span><span class="val">'+imgUrlGrand.length+'</span></div>';
+  h+='<div class="stat"><span class="label">imgUrl 10-50Ko (petite)</span><span class="val">'+imgUrlPetit.length+'</span></div>';
+  h+='</div>';
+
+  // Exemples avec vues
+  if(avecVues.length){
+    h+='<div class="section"><h2>Exemples avec vues[] (5 premiers)</h2><table>';
+    h+='<tr><th>ID</th><th>Fichier</th><th>Série</th><th>Nb vues</th><th>imgUrl Ko</th><th>vues[0] Ko</th><th>groupe</th></tr>';
+    avecVues.slice(0,5).forEach(o=>{
+      const v0=o.vues[0]||{};
+      h+='<tr>';
+      h+='<td style="font-size:10px;color:#6e6860">'+o.id+'</td>';
+      h+='<td style="font-size:10px">'+(o.fichier||'-')+'</td>';
+      h+='<td>'+(o.serie||'-')+'</td>';
+      h+='<td>'+o.vues.length+'</td>';
+      h+='<td>'+(o.imgUrl?Math.round(o.imgUrl.length/1024)+'Ko':'-')+'</td>';
+      h+='<td>'+(v0.imgUrl?Math.round(v0.imgUrl.length/1024)+'Ko':'-')+'</td>';
+      h+='<td>'+(o.groupe||'-')+'</td>';
+      h+='</tr>';
+    });
+    h+='</table></div>';
+  } else {
+    h+='<div class="section"><span class="warn">⚠ Aucun document avec vues[] — les liens entre vues ne peuvent pas fonctionner</span></div>';
+  }
+
+  // Exemples avec groupe
+  if(avecGroupe.length){
+    h+='<div class="section"><h2>Exemples avec groupe (5 premiers)</h2><table>';
+    h+='<tr><th>ID</th><th>Fichier</th><th>Groupe</th><th>Nb vues</th></tr>';
+    avecGroupe.slice(0,5).forEach(o=>{
+      h+='<tr><td style="font-size:10px;color:#6e6860">'+o.id+'</td><td>'+(o.fichier||'-')+'</td><td>'+o.groupe+'</td><td>'+(o.vues?o.vues.length:0)+'</td></tr>';
+    });
+    h+='</table></div>';
+  } else {
+    h+='<div class="section"><span class="warn">⚠ Aucun document avec groupe — les groupements entre œuvres ne fonctionnent pas</span></div>';
+  }
+
+  // Exemple complet d un document
+  const exemple = avecVues.length ? avecVues[0] : oeuvres[0];
+  h+='<div class="section"><h2>Structure complète — premier document</h2><pre style="white-space:pre-wrap;font-size:10px;color:#a09080">';
+  const safe={...exemple};
+  if(safe.imgUrl&&safe.imgUrl.length>100) safe.imgUrl='[base64 '+Math.round(safe.imgUrl.length/1024)+'Ko]';
+  if(safe.vues) safe.vues=safe.vues.map(v=>{const sv={...v};if(sv.imgUrl&&sv.imgUrl.length>100)sv.imgUrl='[base64 '+Math.round(sv.imgUrl.length/1024)+'Ko]';return sv;});
+  h+=JSON.stringify(safe,null,2);
+  h+='</pre></div>';
+
+  document.getElementById('results').innerHTML=h;
+  log('Analyse terminee','ok');
 };
 </script>
 </body>
