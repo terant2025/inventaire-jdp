@@ -906,7 +906,7 @@ function makeCard(item){
     ${multi?`<div class="group-badge">⊞ ${totalVues} vue${totalVues>1?'s':''}</div>`:''}
     <div class="card-body">
       <div class="card-serie">${rep.serie||'—'}</div>
-      <div class="card-title">${rep.titre||`<em>${mainVue(rep).fichier||'Sans titre'}</em>`}</div>
+      <div class="card-title">${rep.titre||`<em>${rep.fichier||'Sans titre'}</em>`}</div>
       <div class="card-meta"><span class="card-year">${rep.annee||'—'}</span>${rep.statut?`<span class="status-dot ${sc(rep.statut)}" title="${sl(rep.statut)}"></span>`:''}</div>
     </div>
     <button class="card-edit-btn" onclick="event.stopPropagation();openPanel(${item.filteredIdx})">✎</button>`;
@@ -922,7 +922,7 @@ function makeRow(item){
   const d=document.createElement('div');
   d.className='list-row'+(isSelected?' selected':'');
   d.innerHTML=`${img?`<img class="list-thumb" src="${img}" loading="lazy" alt="">`:'<div class="list-thumb-empty">🖼</div>'}
-    <div class="list-title">${rep.titre||`<em>${mainVue(rep).fichier||'Sans titre'}</em>`}<small>${rep.serie||'—'}${multi?` · <strong style="color:var(--gold)">${totalVues} vues</strong>`:''}</small></div>
+    <div class="list-title">${rep.titre||`<em>${rep.fichier||'Sans titre'}</em>`}<small>${rep.serie||'—'}${multi?` · <strong style="color:var(--gold)">${totalVues} vues</strong>`:''}</small></div>
     <div class="list-cell">${rep.technique||'—'}</div>
     <div class="list-cell">${dimLabel(rep)}</div>
     <div class="list-cell">${rep.annee||'—'}</div>
