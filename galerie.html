@@ -192,24 +192,25 @@ const SL={disponible:'Disponible',vendu:'Vendu',expose:'Exposé',collection:'Col
 const SC={disponible:'s-disponible',vendu:'s-vendu',expose:'s-expose',collection:'s-collection'};
 
 // ══════════════════════════════════════════════════════════════
-// STRUCTURE FIREBASE (reproduit exactement l'inventaire) :
+// STRUCTURE FIREBASE :
 //
-// Document Firestore "oeuvres/{id}" :
-//   imgUrl   : string  — base64 300px (importée par PowerShell, vignette)
-//   vues[]   : array   — [{id, imgUrl:base64_1200px, fichier, principale}]
-//                        uploadées via le panneau de l'inventaire (grandes images)
-//   groupe   : string  — identifiant partagé entre plusieurs documents liés
-//   titre, serie, annee, technique, hauteur, largeur, profondeur, statut, prix...
+// imgUrl   : base64 — image principale (PowerShell, mise à jour par import)
+//            utilisée pour la grille ET la lightbox si pas de vues[]
+// vues[]   : [{imgUrl, fichier, principale}] — vues uploadées manuellement
+//            (grandes images via panneau inventaire)
+//            Si présentes, utilisées en lightbox uniquement
+// groupe   : string — lie plusieurs documents entre eux
 //
-// Une "œuvre" dans la galerie = 1 document (ou groupe de documents liés)
-// Les "vues" d'une œuvre = o.vues[] du document représentant
-// Les "vues groupées" = plusieurs documents partageant le même o.groupe
-//
-// Priorité image grille  : vues[principale].imgUrl || vues[0].imgUrl || imgUrl
-// Priorité image lightbox: idem (1200px si disponible, sinon 300px)
+// Priorité grille   : imgUrl racine (toujours présent, taille contrôlée)
+// Priorité lightbox : vues[principale].imgUrl || vues[0].imgUrl || imgUrl
 // ══════════════════════════════════════════════════════════════
 
-// Image principale d'un document (reproduit mainVue/mainImg de l'inventaire)
+// Image pour la grille — toujours imgUrl racine
+function getGridImg(o){
+  return o.imgUrl||'';
+}
+
+// Image principale pour la lightbox — vues[] en priorité si disponibles
 function getMainImg(o){
   if(o.vues&&o.vues.length){
     const v=o.vues.find(v=>v.principale)||o.vues[0];
@@ -315,7 +316,7 @@ function render(filtered){
 
 function makeCard(item,oi,isList){
   const {rep}=item;
-  const img=getMainImg(rep);
+  const img=getGridImg(rep);
   const dims=[rep.hauteur,rep.largeur,rep.profondeur].filter(Boolean).join(' × ');
   const tech=[rep.annee,rep.technique].filter(Boolean).join(' — ');
 
@@ -366,14 +367,20 @@ function getLbVues(item){
   // Pour un groupe : chaque membre contribue une "vue" (sa première image)
   if(item.membres.length>1){
     return item.membres.map(m=>({
-      imgUrl: getMainImg(m),
+      imgUrl: getMainImg(m),   // lightbox : grande image si dispo
+      thumb:  getGridImg(m),   // strip vignette : imgUrl racine
       titre:  m.titre||m.fichier||'',
       doc:    m
     }));
   }
   // Œuvre seule : ses vues[] internes (grandes images)
   const vues=getVues(item.rep);
-  return vues.map(v=>({imgUrl:v.imgUrl||'',titre:v.fichier||'',doc:item.rep}));
+  return vues.map(v=>({
+    imgUrl: v.imgUrl||'',
+    thumb:  v.imgUrl||item.rep.imgUrl||'',
+    titre:  v.fichier||'',
+    doc:    item.rep
+  }));
 }
 
 function openLB(oi,vi){
@@ -423,7 +430,7 @@ function renderLB(){
       if(v.imgUrl){
         const t=document.createElement('img');
         t.className='lv'+(i===lbVue?' active':'');
-        t.src=v.imgUrl;
+        t.src=v.thumb||v.imgUrl;
         t.title=v.titre||('Vue '+(i+1));
         t.onclick=()=>lbNavVue(i);
         strip.appendChild(t);

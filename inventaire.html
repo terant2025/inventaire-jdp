@@ -1512,7 +1512,7 @@ async function importJSON(text){
       } else {
         const obj=normalizeItem(item);
         if(obj.serie&&!series.includes(obj.serie)) series.push(obj.serie);
-        // Fusion par fichier+dossier pour éviter les doublons entre dossiers
+        // Fusion par fichier+dossier
         const exists=oeuvres.find(o=>{
           const sameFile = o.fichier===obj.fichier;
           const sameDoss = !obj.vues[0].dossier || !o.vues?.[0]?.dossier ||
@@ -1522,14 +1522,26 @@ async function importJSON(text){
         });
         if(exists){
           updated++;
-          // Mettre à jour uniquement imgUrl dans vues[0] — préserver tout le reste
-          const existingVues = exists.vues && exists.vues.length
-            ? exists.vues.map((v,i)=>i===0?{...v, imgUrl:obj.vues[0].imgUrl}:v)
-            : [{...obj.vues[0]}];
-          wb.update(doc(fdb,'oeuvres',exists.id),{
-            vues: existingVues,
-            imgUrl: obj.vues[0].imgUrl   // compatibilité ancienne structure
-          });
+          // Si le document a déjà des vues uploadées manuellement (> 1 vue
+          // ou la vue existante a un id différent du fichier), ne pas toucher
+          // aux vues[] — stocker la nouvelle image dans imgUrl racine seulement
+          const hasManualVues = exists.vues && exists.vues.length > 1;
+          if(hasManualVues){
+            // Ne mettre à jour que imgUrl racine (vignette grille)
+            // sans toucher aux vues[] déjà uploadées
+            wb.update(doc(fdb,'oeuvres',exists.id),{
+              imgUrl: obj.vues[0].imgUrl
+            });
+          } else {
+            // Pas de vues manuelles — mettre à jour vues[0] et imgUrl
+            const existingVues = exists.vues && exists.vues.length
+              ? [{...exists.vues[0], imgUrl:obj.vues[0].imgUrl}]
+              : [{...obj.vues[0]}];
+            wb.update(doc(fdb,'oeuvres',exists.id),{
+              vues:   existingVues,
+              imgUrl: obj.vues[0].imgUrl
+            });
+          }
         } else {
           added++;
           const{id,...data}=obj;
