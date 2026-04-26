@@ -1512,10 +1512,29 @@ async function importJSON(text){
       } else {
         const obj=normalizeItem(item);
         if(obj.serie&&!series.includes(obj.serie)) series.push(obj.serie);
-        const exists=oeuvres.find(o=>o.fichier===obj.fichier);
-        if(exists)updated++;else added++;
-        const{id,...data}=obj;
-        wb.set(doc(fdb,'oeuvres',id),data);
+        // Fusion par fichier+dossier pour éviter les doublons entre dossiers
+        const exists=oeuvres.find(o=>{
+          const sameFile = o.fichier===obj.fichier;
+          const sameDoss = !obj.vues[0].dossier || !o.vues?.[0]?.dossier ||
+                           o.vues[0].dossier===obj.vues[0].dossier ||
+                           o.dossier===obj.vues[0].dossier;
+          return sameFile && sameDoss;
+        });
+        if(exists){
+          updated++;
+          // Mettre à jour uniquement imgUrl dans vues[0] — préserver tout le reste
+          const existingVues = exists.vues && exists.vues.length
+            ? exists.vues.map((v,i)=>i===0?{...v, imgUrl:obj.vues[0].imgUrl}:v)
+            : [{...obj.vues[0]}];
+          wb.update(doc(fdb,'oeuvres',exists.id),{
+            vues: existingVues,
+            imgUrl: obj.vues[0].imgUrl   // compatibilité ancienne structure
+          });
+        } else {
+          added++;
+          const{id,...data}=obj;
+          wb.set(doc(fdb,'oeuvres',id),data);
+        }
       }
     });
     await wb.commit();
@@ -1667,10 +1686,10 @@ function updateExpCount(){
 window.doExportHTML=()=>{
   const data=getExportOeuvres();
   if(!data.length){toast('Aucune œuvre à exporter',true);return;}
-  const showPrix   = document.getElementById('exp-prix').checked;
-  const showStatut = document.getElementById('exp-statut-opt').checked;
-  const showDims   = document.getElementById('exp-dims').checked;
-  const showNotes  = document.getElementById('exp-notes').checked;
+  const showPrix=document.getElementById('exp-prix').checked;
+  const showStatut=document.getElementById('exp-statut-opt').checked;
+  const showDims=document.getElementById('exp-dims').checked;
+  const showNotes=document.getElementById('exp-notes').checked;
   const filtreLabel=[
     document.getElementById('exp-serie').value||'',
     document.getElementById('exp-annee').value||'',
@@ -1681,304 +1700,183 @@ window.doExportHTML=()=>{
   const statusLabel={disponible:'Disponible',vendu:'Vendu',expose:'Exposé',collection:'Collection privée'};
   const statusColor={disponible:'#2d6a4f',vendu:'#c0392b',expose:'#2c5f8a',collection:'#6b3fa0'};
 
-  // ── Structure lightbox ────────────────────────────────────────
-  // Chaque entrée = 1 œuvre (ou groupe de vues)
-  // imgUrl est directement sur chaque document Firebase (base64)
-  const lbData = data.map(({rep, vues}) => {
-    const dims = [rep.hauteur, rep.largeur, rep.profondeur].filter(Boolean).join(' × ');
-    return {
-      meta: {
-        serie:     rep.serie||'',
-        titre:     rep.titre||rep.fichier||'Sans titre',
-        annee:     rep.annee||'',
-        technique: rep.technique||'',
-        dims,
-        statut:    rep.statut||''
-      },
-      // Chaque vue = un document Firebase plat avec imgUrl directement
-      vues: vues.map(v => ({ img: v.imgUrl||'' }))
-    };
+  // Construire la liste lightbox globale (toutes les vues de tous les groupes)
+  const lightboxItems=[];
+  data.forEach(({rep,vues})=>{
+    vues.forEach(v=>{
+      if(v.imgUrl&&v.imgUrl.startsWith('data:'))
+        lightboxItems.push({src:v.imgUrl,titre:v.titre||rep.titre||'',fichier:v.fichier||''});
+    });
+    // Si aucune vue n'a d'image, ajouter un placeholder
+    if(!vues.some(v=>v.imgUrl&&v.imgUrl.startsWith('data:')))
+      lightboxItems.push({src:'',titre:rep.titre||'',fichier:rep.fichier||''});
   });
 
-  // ── Cartes grille ─────────────────────────────────────────────
-  const cartes = data.map(({rep, vues}, oi) => {
-    const dims   = [rep.hauteur, rep.largeur, rep.profondeur].filter(Boolean).join(' × ');
-    const thumb  = rep.imgUrl||'';   // image principale directement depuis Firebase
-    const nbVues = vues.filter(v => v.imgUrl).length;
-    return `<div class="card" data-serie="${(rep.serie||'').replace(/"/g,'&quot;')}" onclick="openLB(${oi},0)">
+  const cartes=data.map(({rep,vues},cardIdx)=>{
+    const dims=[rep.hauteur,rep.largeur,rep.profondeur].filter(Boolean).join(' × ');
+    const hasImg=rep.imgUrl&&rep.imgUrl.startsWith('data:');
+    const multiVues=vues.filter(v=>v.imgUrl&&v.imgUrl.startsWith('data:'));
+    // Index de cette carte dans lightboxItems
+    const lbIdx=lightboxItems.findIndex(x=>x.fichier===(rep.fichier||'')&&x.titre===(rep.titre||''));
+    return `
+    <div class="card" data-serie="${(rep.serie||'').replace(/"/g,'&quot;')}" onclick="openLightbox(${lbIdx})">
       <div class="card-img">
-        ${thumb ? `<img src="${thumb}" alt="${(rep.titre||rep.fichier||'').replace(/"/g,'&quot;')}" loading="lazy">` : '<div class="card-img-ph">🖼</div>'}
-        ${nbVues > 1 ? `<span class="card-multi">+${nbVues-1} vue${nbVues>2?'s':''}</span>` : ''}
+        ${hasImg?`<img src="${rep.imgUrl}" alt="${(rep.titre||rep.fichier||'').replace(/"/g,'&quot;')}" loading="lazy">`:'<div class="card-img-ph">🖼</div>'}
+        ${multiVues.length>1?`<span class="card-multi">⊞ ${multiVues.length} vues</span>`:''}
       </div>
       <div class="card-body">
         <div class="card-serie">${rep.serie||'—'}</div>
         <div class="card-title">${rep.titre||`<em>${rep.fichier||'Sans titre'}</em>`}</div>
-        ${rep.annee||rep.technique ? `<div class="card-tech">${[rep.annee,rep.technique].filter(Boolean).join(' — ')}</div>` : ''}
-        ${showDims&&dims ? `<div class="card-dims">${dims} cm</div>` : ''}
-        ${showPrix&&rep.prix ? `<div class="card-prix">${Number(rep.prix).toLocaleString('fr-FR')} €</div>` : ''}
-        ${showStatut&&rep.statut ? `<div class="card-statut" style="color:${statusColor[rep.statut]||'#8a847a'}">${statusLabel[rep.statut]||rep.statut}</div>` : ''}
+        ${rep.annee||rep.technique?`<div class="card-tech">${[rep.annee,rep.technique].filter(Boolean).join(' — ')}</div>`:''}
+        ${showDims&&dims?`<div class="card-dims">${dims} cm</div>`:''}
+        ${showPrix&&rep.prix?`<div class="card-prix">${Number(rep.prix).toLocaleString('fr-FR')} €</div>`:''}
+        ${showStatut&&rep.statut?`<div class="card-statut" style="color:${statusColor[rep.statut]||'#8a847a'}">${statusLabel[rep.statut]||rep.statut}</div>`:''}
+        ${showNotes&&rep.notes?`<div class="card-notes">${rep.notes}</div>`:''}
       </div>
     </div>`;
   }).join('');
 
-  const serieNav = seriesPresentes.map(s =>
+  const serieNav=seriesPresentes.map(s=>
     `<button class="tab" onclick="filterSerie(this,'${s.replace(/'/g,"\\'")}') ">${s}</button>`
   ).join('');
 
-  const n = data.length;
-  const lbJson = JSON.stringify(lbData);
+  const n=data.length;
+  const lightboxJson=JSON.stringify(lightboxItems.map(x=>({src:x.src,titre:x.titre})));
 
-  const html = `<!DOCTYPE html>
+  const html=`<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Julie de Pierrepont — ${filtreLabel}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0c0c0b;--bg2:#141412;--surface:#1a1a17;
-  --border:#252520;--border2:#32322c;
-  --text:#e6e0d8;--muted:#6e6860;--accent:#a09080;
-  --gold:#c4a45a;--gold2:#8a6e38;
-  --serif:'Cormorant Garamond',Georgia,serif;
-  --sans:'Montserrat',sans-serif;
-}
-html{scroll-behavior:smooth}
-body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12px;font-weight:300;letter-spacing:.04em;min-height:100vh}
-
-/* HEADER */
-.site-header{padding:40px 52px 24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-end;justify-content:space-between;gap:24px;background:rgba(12,12,11,.96);position:sticky;top:0;z-index:20;backdrop-filter:blur(10px)}
-.site-eyebrow{font-size:8px;letter-spacing:.3em;text-transform:uppercase;color:var(--gold);margin-bottom:6px}
-.site-title{font-family:var(--serif);font-size:clamp(20px,3vw,30px);font-weight:300;letter-spacing:.14em}
-.site-meta{font-size:9px;color:var(--muted);text-align:right}
-.site-meta strong{display:block;font-family:var(--serif);font-size:20px;font-weight:300;color:var(--text);line-height:1;margin-bottom:3px}
-
-/* FILTER BAR */
-.filter-bar{padding:11px 52px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
-.filter-label{font-size:8px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-right:3px}
-.tab{background:none;border:1px solid var(--border);padding:5px 12px;font-family:var(--sans);font-size:8px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);cursor:pointer;transition:all .2s}
-.tab:hover,.tab.active{background:var(--gold);border-color:var(--gold);color:var(--bg)}
-.count{font-size:9px;color:var(--muted);margin-left:auto;padding:4px 10px;background:var(--surface);border:1px solid var(--border)}
-
-/* GALLERY */
-.gallery{padding:18px 52px 60px;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:2px}
-.card{background:var(--surface);border:2px solid transparent;cursor:pointer;transition:border-color .2s;overflow:hidden}
-.card:hover{border-color:var(--gold)}.card.hidden{display:none}
+:root{--bg:#f7f5f2;--bg2:#eeebe6;--surface:#fff;--border:#ddd9d3;--text:#1a1916;--muted:#8a847a;--gold:#b8913a;--serif:'Cormorant Garamond',Georgia,serif;--sans:'Montserrat',sans-serif}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12px;font-weight:300;letter-spacing:.03em}
+.site-header{padding:48px 40px 32px;border-bottom:1px solid var(--border);display:flex;align-items:flex-end;justify-content:space-between;gap:24px}
+.site-title{font-family:var(--serif);font-size:clamp(22px,4vw,36px);font-weight:300;letter-spacing:.14em}
+.site-title span{display:block;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);margin-bottom:6px}
+.site-meta{font-size:10px;color:var(--muted);letter-spacing:.1em;text-align:right}
+.site-meta strong{display:block;font-size:18px;font-family:var(--serif);font-weight:300;color:var(--text)}
+.filter-bar{padding:14px 40px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
+.filter-label{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-right:4px}
+.tab{background:var(--surface);border:1px solid var(--border);padding:5px 14px;font-family:var(--sans);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);cursor:pointer;transition:all .2s}
+.tab:hover,.tab.active{background:var(--text);color:var(--surface);border-color:var(--text)}
+.tab-all{margin-right:8px}
+.count{font-size:9px;color:var(--muted);letter-spacing:.1em;margin-left:auto;padding:4px 10px;background:var(--surface);border:1px solid var(--border)}
+.gallery{padding:24px 40px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:2px}
+.card{background:var(--surface);border:2px solid transparent;cursor:pointer;transition:border-color .2s}
+.card:hover{border-color:var(--gold)}
+.card.hidden{display:none}
 .card-img{aspect-ratio:1;overflow:hidden;background:var(--bg2);display:flex;align-items:center;justify-content:center;position:relative}
-.card-img img{width:100%;height:100%;object-fit:cover;display:block;filter:brightness(.82) saturate(.85);transition:transform .5s,filter .4s}
-.card:hover .card-img img{transform:scale(1.05);filter:brightness(1) saturate(1)}
-.card-img-ph{font-size:26px;opacity:.15}
-.card-multi{position:absolute;bottom:7px;right:7px;background:rgba(12,12,11,.82);border:1px solid var(--gold2);color:var(--gold);font-size:8px;letter-spacing:.1em;padding:3px 8px}
-.card-body{padding:9px 11px 13px}
-.card-serie{font-size:7px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:3px}
-.card-title{font-family:var(--serif);font-size:14px;font-weight:400;line-height:1.3;margin-bottom:4px;color:var(--text)}
-.card-title em{color:var(--muted);font-style:italic;font-size:12px}
-.card-tech{font-size:9px;color:var(--muted);line-height:1.5;margin-bottom:2px}
-.card-dims{font-size:9px;color:var(--muted)}
-.card-prix{font-family:var(--serif);font-size:13px;color:var(--text);margin-top:3px}
-.card-statut{font-size:8px;letter-spacing:.1em;text-transform:uppercase;margin-top:3px}
-
+.card-img img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .4s}
+.card:hover .card-img img{transform:scale(1.04)}
+.card-img-ph{font-size:32px;opacity:.15}
+.card-multi{position:absolute;top:7px;left:7px;background:rgba(26,25,22,.72);color:#fff;font-size:8px;letter-spacing:.13em;padding:3px 7px;text-transform:uppercase;backdrop-filter:blur(3px)}
+.card-body{padding:10px 12px 14px}
+.card-serie{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-bottom:3px}
+.card-title{font-family:var(--serif);font-size:15px;font-weight:400;line-height:1.3;margin-bottom:5px}
+.card-title em{color:var(--muted);font-style:italic}
+.card-tech{font-size:10px;color:var(--muted);margin-bottom:3px;line-height:1.5}
+.card-dims{font-size:10px;color:var(--muted);letter-spacing:.05em}
+.card-prix{font-size:11px;font-family:var(--serif);color:var(--text);margin-top:4px}
+.card-statut{font-size:9px;letter-spacing:.1em;text-transform:uppercase;margin-top:4px;font-weight:400}
+.card-notes{font-size:10px;color:var(--muted);font-style:italic;margin-top:6px;line-height:1.6;border-top:1px solid var(--border);padding-top:6px}
 /* LIGHTBOX */
-#lb{display:none;position:fixed;inset:0;z-index:1000;background:rgba(6,6,5,.98);flex-direction:column}
+#lb{display:none;position:fixed;inset:0;background:rgba(26,25,22,.94);z-index:999;flex-direction:column;align-items:center;justify-content:center}
 #lb.open{display:flex}
-
-/* Image zone */
-.lb-img-zone{flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:0 70px;min-height:0;overflow:hidden}
-#lb-img{max-width:100%;max-height:calc(100vh - 190px);object-fit:contain;display:block;transition:opacity .2s;box-shadow:0 0 60px rgba(0,0,0,.5)}
-#lb-img.fade{opacity:0}
-
-/* Arrows — navigation entre œuvres */
-.lb-arrow{position:absolute;top:50%;transform:translateY(-50%);background:rgba(18,18,16,.85);border:1px solid var(--border2);color:var(--muted);width:48px;height:48px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;transition:all .2s}
-.lb-arrow:hover{background:var(--surface);color:var(--text);border-color:var(--accent)}
-#lb-prev{left:12px}#lb-next{right:12px}
-
-/* Close + counter */
-#lb-close{position:absolute;top:18px;right:24px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;transition:color .2s;z-index:10}
-#lb-close:hover{color:var(--text)}
-#lb-counter{position:absolute;top:22px;left:50%;transform:translateX(-50%);font-size:9px;letter-spacing:.2em;color:var(--muted);text-transform:uppercase;pointer-events:none}
-
-/* Bottom panel : méta + vignettes vues */
-.lb-bottom{width:100%;flex-shrink:0;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:12px 80px 16px;background:linear-gradient(to top,rgba(6,6,5,.98) 60%,transparent)}
-.lb-meta-serie{font-size:8px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);margin-bottom:4px}
-.lb-meta-titre{font-family:var(--serif);font-size:19px;font-weight:300;color:var(--text);margin-bottom:4px;line-height:1.2}
-.lb-meta-details{font-size:10px;color:var(--muted);line-height:1.9}
-.lb-meta-details strong{color:var(--accent);font-weight:300}
-
-/* Vignettes vues (même groupe) */
-.lb-vues{display:flex;align-items:center;gap:3px;flex-shrink:0}
-.lb-vue{width:50px;height:50px;object-fit:cover;cursor:pointer;opacity:.32;border:1px solid transparent;transition:all .2s;flex-shrink:0}
-.lb-vue.active,.lb-vue:hover{opacity:1;border-color:var(--gold)}
-.lb-vue-ph{width:50px;height:50px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:14px;opacity:.2;cursor:pointer;border:1px solid transparent;transition:all .2s}
-.lb-vue-ph.active,.lb-vue-ph:hover{opacity:.6;border-color:var(--gold)}
-
-/* FOOTER */
-.site-footer{padding:26px 52px;border-top:1px solid var(--border);text-align:center;font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
-
-/* RESPONSIVE — tablette */
-@media(max-width:1024px){
-  .site-header,.filter-bar,.gallery,.site-footer{padding-left:28px;padding-right:28px}
-  .gallery{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
-  .lb-bottom{padding:12px 40px 14px}
-  .lb-img-zone{padding:0 58px}
-}
-/* RESPONSIVE — mobile */
+#lb-img{max-width:90vw;max-height:82vh;object-fit:contain;display:block}
+#lb-caption{margin-top:14px;font-family:var(--serif);font-style:italic;font-size:16px;color:rgba(255,255,255,.75);letter-spacing:.06em;text-align:center}
+#lb-nav{position:absolute;top:50%;transform:translateY(-50%);display:flex;justify-content:space-between;width:100%;padding:0 20px;pointer-events:none}
+.lb-btn{background:rgba(255,255,255,.12);border:none;color:#fff;font-size:22px;width:44px;height:44px;cursor:pointer;display:flex;align-items:center;justify-content:center;pointer-events:all;transition:background .2s}
+.lb-btn:hover{background:rgba(255,255,255,.25)}
+#lb-close{position:absolute;top:18px;right:22px;background:none;border:none;color:rgba(255,255,255,.6);font-size:24px;cursor:pointer;line-height:1}
+#lb-counter{position:absolute;top:20px;left:50%;transform:translateX(-50%);font-size:9px;letter-spacing:.18em;color:rgba(255,255,255,.4);text-transform:uppercase}
+#lb-thumbs{display:flex;gap:6px;margin-top:12px;max-width:90vw;overflow-x:auto;padding:4px 0}
+.lb-thumb{width:52px;height:46px;object-fit:cover;cursor:pointer;opacity:.5;border:2px solid transparent;transition:all .18s;flex-shrink:0}
+.lb-thumb.active{opacity:1;border-color:var(--gold)}
+.site-footer{padding:32px 40px;border-top:1px solid var(--border);text-align:center;font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 @media(max-width:640px){
-  .site-header{padding:20px 16px 14px;flex-direction:column;align-items:flex-start;gap:8px}
-  .site-meta{text-align:left}
-  .filter-bar,.gallery,.site-footer{padding-left:12px;padding-right:12px}
-  .tab{padding:4px 9px;font-size:7px}
-  .gallery{grid-template-columns:repeat(2,1fr)}
-  .card-body{padding:7px 9px 10px}
-  .lb-img-zone{padding:0 42px}
-  #lb-img{max-height:calc(100vh - 180px)}
-  .lb-bottom{padding:8px 14px 10px;flex-direction:column;gap:8px;align-items:flex-start}
-  .lb-meta-titre{font-size:16px}
-  .lb-meta-details{font-size:9px}
-  .lb-arrow{width:34px;height:34px;font-size:14px}
-  #lb-prev{left:3px}#lb-next{right:3px}
-  .lb-vue{width:40px;height:40px}
+  .site-header,.filter-bar,.gallery,.site-footer{padding-left:16px;padding-right:16px}
+  .gallery{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
 }
 </style>
 </head>
 <body>
-
-<div class="site-header">
-  <div>
-    <div class="site-eyebrow">Art Textile Contemporain</div>
-    <div class="site-title">Julie de Pierrepont</div>
-  </div>
+<header class="site-header">
+  <div class="site-title"><span>Art Textile Contemporain</span>Julie de Pierrepont</div>
   <div class="site-meta"><strong id="total-count">${n}</strong>œuvre${n>1?'s':''} · ${filtreLabel}</div>
-</div>
-
+</header>
 <div class="filter-bar">
   <span class="filter-label">Série</span>
-  <button class="tab active" onclick="filterSerie(this,'')">Toutes</button>
+  <button class="tab tab-all active" onclick="filterSerie(this,'')">Toutes</button>
   ${serieNav}
   <span class="count" id="cnt">${n} œuvre${n>1?'s':''}</span>
 </div>
+<main class="gallery" id="gallery">
+${cartes}
+</main>
+<footer class="site-footer">Julie de Pierrepont — Art Textile Contemporain · ${new Date().getFullYear()}</footer>
 
-<div class="gallery" id="gallery">${cartes}</div>
-
-<div class="site-footer">Julie de Pierrepont — Art Textile Contemporain · ${new Date().getFullYear()}</div>
-
+<!-- LIGHTBOX -->
 <div id="lb">
-  <button id="lb-close" onclick="closeLB()">✕</button>
+  <button id="lb-close" onclick="closeLightbox()">✕</button>
   <div id="lb-counter"></div>
-  <div class="lb-img-zone">
-    <button class="lb-arrow" id="lb-prev" onclick="lbNavOeuvre(-1)">←</button>
-    <img id="lb-img" src="" alt="">
-    <button class="lb-arrow" id="lb-next" onclick="lbNavOeuvre(1)">→</button>
+  <img id="lb-img" src="" alt="">
+  <div id="lb-caption"></div>
+  <div id="lb-nav">
+    <button class="lb-btn" onclick="lbNav(-1)">‹</button>
+    <button class="lb-btn" onclick="lbNav(1)">›</button>
   </div>
-  <div class="lb-bottom">
-    <div class="lb-meta">
-      <div class="lb-meta-serie" id="lb-serie"></div>
-      <div class="lb-meta-titre" id="lb-titre"></div>
-      <div class="lb-meta-details" id="lb-details"></div>
-    </div>
-    <div class="lb-vues" id="lb-vues"></div>
-  </div>
+  <div id="lb-thumbs"></div>
 </div>
 
 <script>
-const LB=${lbJson};
-let lbOeuvre=0, lbVue=0;
-
-function openLB(oi, vi){
-  lbOeuvre=oi; lbVue=vi||0;
+const LB=${lightboxJson};
+let lbIdx=0;
+function openLightbox(idx){
+  if(idx<0||idx>=LB.length||!LB[idx].src)return;
+  lbIdx=idx;renderLightbox();
   document.getElementById('lb').classList.add('open');
-  document.body.style.overflow='hidden';
-  document.addEventListener('keydown', lbKey);
-  renderLB();
+  document.addEventListener('keydown',lbKey);
 }
-function closeLB(){
+function closeLightbox(){
   document.getElementById('lb').classList.remove('open');
-  document.body.style.overflow='';
-  document.removeEventListener('keydown', lbKey);
+  document.removeEventListener('keydown',lbKey);
 }
-
-// Flèches ← → = navigation entre œuvres
-function lbNavOeuvre(d){
-  lbOeuvre=(lbOeuvre+d+LB.length)%LB.length;
-  lbVue=0;
-  renderLB();
+function lbNav(d){lbIdx=(lbIdx+d+LB.length)%LB.length;if(!LB[lbIdx].src)lbNav(d);else renderLightbox();}
+function renderLightbox(){
+  document.getElementById('lb-img').src=LB[lbIdx].src;
+  document.getElementById('lb-caption').textContent=LB[lbIdx].titre||'';
+  document.getElementById('lb-counter').textContent=(lbIdx+1)+' / '+LB.length;
+  const thumbs=document.getElementById('lb-thumbs');
+  thumbs.innerHTML='';
+  LB.forEach((x,i)=>{
+    if(!x.src)return;
+    const img=document.createElement('img');
+    img.className='lb-thumb'+(i===lbIdx?' active':'');
+    img.src=x.src;img.onclick=()=>{lbIdx=i;renderLightbox();};
+    thumbs.appendChild(img);
+  });
 }
-// Vignettes bas = navigation entre vues d'une même œuvre
-function lbNavVue(vi){ lbVue=vi; renderLB(); }
-
-function renderLB(){
-  const oeuvre = LB[lbOeuvre];
-  const vues   = oeuvre.vues||[];
-  const vue    = vues[lbVue]||vues[0]||{};
-  const meta   = oeuvre.meta||{};
-
-  // Image plein écran
-  const img = document.getElementById('lb-img');
-  img.classList.add('fade');
-  setTimeout(()=>{ img.src=vue.img||''; img.classList.remove('fade'); }, 180);
-
-  // Compteur
-  document.getElementById('lb-counter').textContent = (lbOeuvre+1)+' / '+LB.length;
-
-  // Méta
-  document.getElementById('lb-serie').textContent = meta.serie||'';
-  document.getElementById('lb-titre').textContent = meta.titre||'';
-  const det=[];
-  if(meta.annee)     det.push('<strong>'+meta.annee+'</strong>');
-  if(meta.technique) det.push(meta.technique);
-  if(meta.dims)      det.push(meta.dims+' cm');
-  document.getElementById('lb-details').innerHTML = det.join('&ensp;·&ensp;');
-
-  // Vignettes vues (seulement si groupe avec plusieurs vues)
-  const strip = document.getElementById('lb-vues');
-  strip.innerHTML='';
-  if(vues.length>1){
-    vues.forEach((v,i)=>{
-      if(v.img){
-        const t=document.createElement('img');
-        t.className='lb-vue'+(i===lbVue?' active':'');
-        t.src=v.img; t.title='Vue '+(i+1);
-        t.onclick=()=>lbNavVue(i);
-        strip.appendChild(t);
-      } else {
-        const t=document.createElement('div');
-        t.className='lb-vue-ph'+(i===lbVue?' active':'');
-        t.textContent='🖼'; t.onclick=()=>lbNavVue(i);
-        strip.appendChild(t);
-      }
-    });
-  }
-}
-
 function lbKey(e){
-  if(e.key==='Escape')    closeLB();
-  if(e.key==='ArrowRight') lbNavOeuvre(1);
-  if(e.key==='ArrowLeft')  lbNavOeuvre(-1);
-  if(e.key==='ArrowUp')   { const v=LB[lbOeuvre]?.vues||[]; lbNavVue(Math.max(0,lbVue-1)); }
-  if(e.key==='ArrowDown') { const v=LB[lbOeuvre]?.vues||[]; lbNavVue(Math.min(v.length-1,lbVue+1)); }
+  if(e.key==='Escape')closeLightbox();
+  else if(e.key==='ArrowRight')lbNav(1);
+  else if(e.key==='ArrowLeft')lbNav(-1);
 }
-document.getElementById('lb').addEventListener('click', e=>{
-  if(e.target===document.getElementById('lb')) closeLB();
-});
+document.getElementById('lb').addEventListener('click',e=>{if(e.target===document.getElementById('lb'))closeLightbox();});
 
-// Swipe mobile
-let tsX=0;
-document.getElementById('lb').addEventListener('touchstart', e=>{ tsX=e.touches[0].clientX; },{passive:true});
-document.getElementById('lb').addEventListener('touchend', e=>{
-  const dx=e.changedTouches[0].clientX-tsX;
-  if(Math.abs(dx)>50){ dx<0 ? lbNavOeuvre(1) : lbNavOeuvre(-1); }
-},{passive:true});
-
-function filterSerie(btn, serie){
+function filterSerie(btn,serie){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
+  const cards=document.querySelectorAll('.card');
   let n=0;
-  document.querySelectorAll('.card').forEach(c=>{
+  cards.forEach(c=>{
     const show=!serie||c.dataset.serie===serie;
     c.classList.toggle('hidden',!show);
-    if(show) n++;
+    if(show)n++;
   });
   document.getElementById('cnt').textContent=n+' œuvre'+(n>1?'s':'');
   document.getElementById('total-count').textContent=n;
@@ -1987,10 +1885,10 @@ function filterSerie(btn, serie){
 </body>
 </html>`;
 
-  const blob = new Blob([html], {type:'text/html;charset=utf-8'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'galerie.html';
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`galerie-jdp-${filtreLabel.replace(/[^a-z0-9]/gi,'-').toLowerCase()}.html`;
   a.click();
   closeModal('modal-export-html');
   toast(`✓ Galerie exportée — ${n} œuvre${n>1?'s':''}`);
