@@ -93,7 +93,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12
 #lti{font-family:var(--serif);font-size:19px;font-weight:300;color:var(--text);margin-bottom:4px;line-height:1.2}
 #lde{font-size:10px;color:var(--muted);line-height:1.9}
 #lde strong{color:var(--accent);font-weight:300}
-/* Strip vignettes — navigation entre vues d'une même œuvre */
 .lvs{display:flex;align-items:center;gap:3px;flex-shrink:0;max-width:40vw;overflow-x:auto}
 .lv{width:48px;height:48px;object-fit:cover;cursor:pointer;opacity:.3;border:2px solid transparent;transition:all .2s;flex-shrink:0}
 .lv.active,.lv:hover{opacity:1;border-color:var(--gold)}
@@ -186,32 +185,14 @@ const CONF={apiKey:"AIzaSyDw27kfc2K5N8_kXlbE3rYLu0KJRLu2lqE",authDomain:"inventa
 const app=initializeApp(CONF);
 const fdb=getFirestore(app);
 
-let oeuvres=[],series=[],lbList=[],lbOeuvre=0,lbVue=0,view='grid';
+let oeuvres=[],series=[],lbList=[],lbIdx=0,lbVue=0,view='grid';
 let filters={serie:'',annee:'',statut:''};
 const SL={disponible:'Disponible',vendu:'Vendu',expose:'Exposé',collection:'Collection privée'};
 const SC={disponible:'s-disponible',vendu:'s-vendu',expose:'s-expose',collection:'s-collection'};
 
-// ══════════════════════════════════════════════════════════════
-// STRUCTURE FIREBASE :
-//
-// imgUrl   : base64 — image principale (PowerShell, mise à jour par import)
-//            utilisée pour la grille ET la lightbox si pas de vues[]
-// vues[]   : [{imgUrl, fichier, principale}] — vues uploadées manuellement
-//            (grandes images via panneau inventaire)
-//            Si présentes, utilisées en lightbox uniquement
-// groupe   : string — lie plusieurs documents entre eux
-//
-// Priorité grille   : imgUrl racine (toujours présent, taille contrôlée)
-// Priorité lightbox : vues[principale].imgUrl || vues[0].imgUrl || imgUrl
-// ══════════════════════════════════════════════════════════════
-
-// Image pour la grille — toujours imgUrl racine
-function getGridImg(o){
-  return o.imgUrl||'';
-}
-
-// Image principale pour la lightbox — vues[] en priorité si disponibles
-function getMainImg(o){
+// ── IMAGE PRINCIPALE ──────────────────────────────────────────
+// Reproduit exactement mainVue/mainImg de l'inventaire
+function mainImg(o){
   if(o.vues&&o.vues.length){
     const v=o.vues.find(v=>v.principale)||o.vues[0];
     return v.imgUrl||o.imgUrl||'';
@@ -219,54 +200,80 @@ function getMainImg(o){
   return o.imgUrl||'';
 }
 
-// Toutes les vues d'un document (vues[] internes)
-function getVues(o){
-  if(o.vues&&o.vues.length) return o.vues;
-  // Pas de vues[] → l'imgUrl seule constitue la vue unique
-  return [{imgUrl:o.imgUrl||'',fichier:o.fichier||'',principale:true}];
-}
-
-// Construire la liste lightbox :
-// Chaque entrée = un document (ou groupe de documents)
-// Les flèches naviguent entre entrées
-// Les vignettes bas naviguent entre vues[] du document courant
+// ── LISTE AFFICHAGE ───────────────────────────────────────────
+// Reproduit buildDisplayList de l'inventaire :
+// groupe → un seul représentant, membres cherchés dans TOUS les oeuvres
 function buildLbList(filtered){
   const seen=new Set();
   const out=[];
   filtered.forEach(o=>{
     if(!o.groupe){
-      // Œuvre seule — ses vues sont o.vues[]
-      out.push({rep:o, membres:[o]});
+      out.push({rep:o, vues:getVues(o)});
       return;
     }
     if(seen.has(o.groupe)) return;
     seen.add(o.groupe);
-    // Groupe — chercher TOUS les membres dans oeuvres (pas filtered)
-    const membres=oeuvres.filter(x=>x.groupe===o.groupe);
-    const rep=membres.find(x=>getMainImg(x))||membres[0];
-    out.push({rep, membres});
+    // Chercher dans TOUS les oeuvres (pas seulement filtered)
+    const members=oeuvres.filter(x=>x.groupe===o.groupe);
+    const rep=members.find(x=>mainImg(x))||members[0];
+    // Vues = toutes les vues de tous les membres du groupe
+    const vues=members.flatMap(m=>getVues(m));
+    out.push({rep, vues});
   });
   return out;
 }
 
+// Vues d'un document : o.vues[] ou fallback imgUrl
+function getVues(o){
+  if(o.vues&&o.vues.length) return o.vues;
+  return [{imgUrl:o.imgUrl||'', fichier:o.fichier||'', principale:true}];
+}
+
+// Nombre total de vues pour badge
+function countVues(item){
+  return item.vues.filter(v=>v.imgUrl&&v.imgUrl.length>10).length;
+}
+
+// ── INIT ──────────────────────────────────────────────────────
 async function init(){
-  try{const cfg=await getDocs(collection(fdb,'config'));cfg.forEach(d=>{if(d.id==='series')series=d.data().list||[];});}catch(e){series=[];}
+  try{
+    const cfg=await getDocs(collection(fdb,'config'));
+    cfg.forEach(d=>{if(d.id==='series')series=d.data().list||[];});
+  }catch(e){series=[];}
+
   onSnapshot(collection(fdb,'oeuvres'),snap=>{
     oeuvres=snap.docs.map(d=>({id:d.id,...d.data()}));
-    buildTabs();applyFilters();
-    const l=document.getElementById('loading');l.classList.add('out');setTimeout(()=>l.style.display='none',400);
+    buildTabs();
+    applyFilters();
+    const l=document.getElementById('loading');
+    l.classList.add('out');
+    setTimeout(()=>l.style.display='none',400);
   });
 }
 
+// ── FILTRES ───────────────────────────────────────────────────
 function buildTabs(){
   const allS=[...series,...oeuvres.map(o=>o.serie).filter(s=>s&&!series.includes(s))];
   const sc=document.getElementById('ts');
-  sc.innerHTML=`<button class="tab${!filters.serie?' active':''}" onclick="setFilter('serie','',this)">Toutes</button>`;
-  allS.forEach(s=>{const b=document.createElement('button');b.className='tab'+(filters.serie===s?' active':'');b.textContent=s;b.onclick=()=>setFilter('serie',s,b);sc.appendChild(b);});
+  sc.innerHTML='<button class="tab'+(filters.serie?'':' active')+'" onclick="setFilter(\'serie\',\'\',this)">Toutes</button>';
+  allS.forEach(s=>{
+    const b=document.createElement('button');
+    b.className='tab'+(filters.serie===s?' active':'');
+    b.textContent=s;
+    b.onclick=()=>setFilter('serie',s,b);
+    sc.appendChild(b);
+  });
+
   const years=[...new Set(oeuvres.map(o=>o.annee).filter(Boolean))].sort((a,b)=>b-a);
   const ac=document.getElementById('ta');
-  ac.innerHTML=`<button class="tab${!filters.annee?' active':''}" onclick="setFilter('annee','',this)">Toutes</button>`;
-  years.forEach(y=>{const b=document.createElement('button');b.className='tab'+(filters.annee===y?' active':'');b.textContent=y;b.onclick=()=>setFilter('annee',y,b);ac.appendChild(b);});
+  ac.innerHTML='<button class="tab'+(filters.annee?'':' active')+'" onclick="setFilter(\'annee\',\'\',this)">Toutes</button>';
+  years.forEach(y=>{
+    const b=document.createElement('button');
+    b.className='tab'+(filters.annee===y?' active':'');
+    b.textContent=y;
+    b.onclick=()=>setFilter('annee',y,b);
+    ac.appendChild(b);
+  });
 }
 
 window.setFilter=(type,val,btn)=>{
@@ -277,7 +284,7 @@ window.setFilter=(type,val,btn)=>{
 };
 
 function applyFilters(){
-  let f=oeuvres.filter(o=>{
+  const f=oeuvres.filter(o=>{
     if(filters.serie&&o.serie!==filters.serie)return false;
     if(filters.annee&&o.annee!==filters.annee)return false;
     if(filters.statut&&o.statut!==filters.statut)return false;
@@ -287,15 +294,21 @@ function applyFilters(){
     const ad=ai<0?999:ai,bd=bi<0?999:bi;
     return ad!==bd?ad-bd:(a.annee||'').localeCompare(b.annee||'');
   });
+
   lbList=buildLbList(f);
   document.getElementById('s-total').textContent=oeuvres.length;
   document.getElementById('cnt').textContent=lbList.length+' œuvre'+(lbList.length>1?'s':'');
   render(f);
 }
 
+// ── RENDU ─────────────────────────────────────────────────────
 function render(filtered){
-  const g=document.getElementById('gallery');g.innerHTML='';
-  if(!lbList.length){g.innerHTML='<div class="empty"><div class="ic">🧵</div><p>Aucune œuvre ne correspond</p></div>';return;}
+  const g=document.getElementById('gallery');
+  g.innerHTML='';
+  if(!lbList.length){
+    g.innerHTML='<div class="empty"><div class="ic">🧵</div><p>Aucune œuvre ne correspond</p></div>';
+    return;
+  }
   if(view==='grid'){
     g.className='';
     const allS=[...series,...lbList.map(x=>x.rep.serie).filter(s=>s&&!series.includes(s)),'Sans série'];
@@ -304,44 +317,36 @@ function render(filtered){
     allS.forEach(s=>{
       if(!byS[s]||!byS[s].length)return;
       const h=document.createElement('div');h.className='sh';
-      h.innerHTML=`<h2>${s}</h2><span>${byS[s].length} œuvre${byS[s].length>1?'s':''}</span>`;
+      h.innerHTML='<h2>'+s+'</h2><span>'+byS[s].length+' œuvre'+(byS[s].length>1?'s':'')+'</span>';
       g.appendChild(h);
       byS[s].forEach(item=>g.appendChild(makeCard(item,lbList.indexOf(item),false)));
     });
   } else {
     g.className='list-mode';
-    lbList.forEach((item,oi)=>g.appendChild(makeCard(item,oi,true)));
+    lbList.forEach((item,i)=>g.appendChild(makeCard(item,i,true)));
   }
 }
 
 function makeCard(item,oi,isList){
   const {rep}=item;
-  const img=getGridImg(rep);
+  const img=mainImg(rep);
   const dims=[rep.hauteur,rep.largeur,rep.profondeur].filter(Boolean).join(' × ');
   const tech=[rep.annee,rep.technique].filter(Boolean).join(' — ');
-
-  // Compter TOUTES les vues : vues[] internes + membres du groupe
-  const vuesInternes=getVues(rep).length;
-  const nbMembres=item.membres.length;
-  // Total affiché = vues internes du représentant + (membres-1) si groupe
-  const totalVues = nbMembres>1
-    ? nbMembres  // groupe : 1 entrée par membre
-    : vuesInternes; // œuvre seule : ses vues internes
-
+  const nb=countVues(item);
   const d=document.createElement('div');
   d.className='card'+(isList?' lc':'');
-  d.innerHTML=`
-    <div class="ci">
-      ${img?`<img src="${img}" alt="${(rep.titre||'').replace(/"/g,'&quot;')}" loading="lazy">`:'<div class="ci-ph">🖼</div>'}
-      ${totalVues>1?`<span class="cbadge">+${totalVues-1} vue${totalVues>2?'s':''}</span>`:''}
-    </div>
-    <div class="cb">
-      <div class="cs">${rep.serie||'—'}</div>
-      <div class="ct">${rep.titre||`<em>${rep.fichier||'Sans titre'}</em>`}</div>
-      ${tech?`<div class="ck">${tech}</div>`:''}
-      ${dims?`<div class="cd">${dims} cm</div>`:''}
-      ${rep.statut?`<div class="cst ${SC[rep.statut]||''}">${SL[rep.statut]||rep.statut}</div>`:''}
-    </div>`;
+  d.innerHTML=
+    '<div class="ci">'+
+      (img?'<img src="'+img+'" alt="'+(rep.titre||'').replace(/"/g,'&quot;')+'" loading="lazy">':'<div class="ci-ph">🖼</div>')+
+      (nb>1?'<span class="cbadge">+' +(nb-1)+' vue'+(nb>2?'s':'')+'</span>':'')+
+    '</div>'+
+    '<div class="cb">'+
+      '<div class="cs">'+(rep.serie||'—')+'</div>'+
+      '<div class="ct">'+(rep.titre?rep.titre:'<em>'+(rep.fichier||'Sans titre')+'</em>')+'</div>'+
+      (tech?'<div class="ck">'+tech+'</div>':'')+
+      (dims?'<div class="cd">'+dims+' cm</div>':'')+
+      (rep.statut?'<div class="cst '+(SC[rep.statut]||')+'">'+(SL[rep.statut]||rep.statut)+'</div>':'')+
+    '</div>';
   d.addEventListener('click',()=>openLB(oi,0));
   return d;
 }
@@ -354,37 +359,11 @@ window.setView=v=>{
 };
 
 // ── LIGHTBOX ──────────────────────────────────────────────────
-// lbOeuvre = index dans lbList (quelle œuvre / entrée)
-// lbVue    = index dans la liste des vues de cette entrée
-//
-// Les "vues" en lightbox sont construites ainsi :
-//   - Si œuvre seule   : o.vues[] du document (grandes images 1200px)
-//   - Si groupe        : une vue par membre (chacun avec ses propres vues[])
-//
-// La strip du bas = vignettes pour naviguer entre vues de l'entrée courante
-
-function getLbVues(item){
-  // Pour un groupe : chaque membre contribue une "vue" (sa première image)
-  if(item.membres.length>1){
-    return item.membres.map(m=>({
-      imgUrl: getMainImg(m),   // lightbox : grande image si dispo
-      thumb:  getGridImg(m),   // strip vignette : imgUrl racine
-      titre:  m.titre||m.fichier||'',
-      doc:    m
-    }));
-  }
-  // Œuvre seule : ses vues[] internes (grandes images)
-  const vues=getVues(item.rep);
-  return vues.map(v=>({
-    imgUrl: v.imgUrl||'',
-    thumb:  v.imgUrl||item.rep.imgUrl||'',
-    titre:  v.fichier||'',
-    doc:    item.rep
-  }));
-}
+// Flèches ← → = navigation entre œuvres/groupes
+// Strip bas = navigation entre vues d'une même œuvre
 
 function openLB(oi,vi){
-  lbOeuvre=oi;lbVue=vi||0;
+  lbIdx=oi;lbVue=vi||0;
   document.getElementById('lb').classList.add('open');
   document.body.style.overflow='hidden';
   document.addEventListener('keydown',lbKey);
@@ -395,24 +374,20 @@ window.closeLB=()=>{
   document.body.style.overflow='';
   document.removeEventListener('keydown',lbKey);
 };
-window.lbNavOeuvre=d=>{lbOeuvre=(lbOeuvre+d+lbList.length)%lbList.length;lbVue=0;renderLB();};
-function lbNavVue(vi){lbVue=vi;renderLB();}
+window.lbNavOeuvre=d=>{
+  lbIdx=(lbIdx+d+lbList.length)%lbList.length;
+  lbVue=0;renderLB();
+};
 
 function renderLB(){
-  const item=lbList[lbOeuvre];
-  const {rep}=item;
-  const vues=getLbVues(item);
-  const vue=vues[lbVue]||vues[0];
+  const {rep,vues}=lbList[lbIdx];
+  const vue=vues[lbVue]||vues[0]||{imgUrl:rep.imgUrl||''};
 
-  // Image plein écran
   const imgEl=document.getElementById('li');
   imgEl.classList.add('fade');
   setTimeout(()=>{imgEl.src=vue.imgUrl||'';imgEl.classList.remove('fade');},180);
 
-  // Compteur œuvres
-  document.getElementById('lco').textContent=(lbOeuvre+1)+' / '+lbList.length;
-
-  // Méta (toujours depuis le représentant)
+  document.getElementById('lco').textContent=(lbIdx+1)+' / '+lbList.length;
   document.getElementById('lse').textContent=rep.serie||'';
   document.getElementById('lti').textContent=rep.titre||rep.fichier||'Sans titre';
   const dims=[rep.hauteur,rep.largeur,rep.profondeur].filter(Boolean).join(' × ');
@@ -422,22 +397,21 @@ function renderLB(){
   if(dims)det.push(dims+' cm');
   document.getElementById('lde').innerHTML=det.join('&ensp;·&ensp;');
 
-  // Strip vignettes — seulement si plusieurs vues
+  // Strip vignettes — vues de l'œuvre courante
   const strip=document.getElementById('lvs');
   strip.innerHTML='';
   if(vues.length>1){
     vues.forEach((v,i)=>{
-      if(v.imgUrl){
+      if(v.imgUrl&&v.imgUrl.length>10){
         const t=document.createElement('img');
         t.className='lv'+(i===lbVue?' active':'');
-        t.src=v.thumb||v.imgUrl;
-        t.title=v.titre||('Vue '+(i+1));
-        t.onclick=()=>lbNavVue(i);
+        t.src=v.imgUrl;t.title='Vue '+(i+1);
+        t.onclick=()=>{lbVue=i;renderLB();};
         strip.appendChild(t);
       } else {
         const t=document.createElement('div');
         t.className='lvp'+(i===lbVue?' active':'');
-        t.textContent='🖼';t.onclick=()=>lbNavVue(i);
+        t.textContent='🖼';t.onclick=()=>{lbVue=i;renderLB();};
         strip.appendChild(t);
       }
     });
@@ -448,13 +422,18 @@ function lbKey(e){
   if(e.key==='Escape')closeLB();
   if(e.key==='ArrowRight')lbNavOeuvre(1);
   if(e.key==='ArrowLeft')lbNavOeuvre(-1);
-  if(e.key==='ArrowUp'){const v=getLbVues(lbList[lbOeuvre]);lbVue=Math.max(0,lbVue-1);renderLB();}
-  if(e.key==='ArrowDown'){const v=getLbVues(lbList[lbOeuvre]);lbVue=Math.min(v.length-1,lbVue+1);renderLB();}
+  if(e.key==='ArrowUp'){lbVue=Math.max(0,lbVue-1);renderLB();}
+  if(e.key==='ArrowDown'){lbVue=Math.min((lbList[lbIdx]?.vues?.length||1)-1,lbVue+1);renderLB();}
 }
-document.getElementById('lb').addEventListener('click',e=>{if(e.target===document.getElementById('lb'))closeLB();});
+document.getElementById('lb').addEventListener('click',e=>{
+  if(e.target===document.getElementById('lb'))closeLB();
+});
 let tsX=0;
 document.getElementById('lb').addEventListener('touchstart',e=>{tsX=e.touches[0].clientX;},{passive:true});
-document.getElementById('lb').addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tsX;if(Math.abs(dx)>50){dx<0?lbNavOeuvre(1):lbNavOeuvre(-1);}},{passive:true});
+document.getElementById('lb').addEventListener('touchend',e=>{
+  const dx=e.changedTouches[0].clientX-tsX;
+  if(Math.abs(dx)>50){dx<0?lbNavOeuvre(1):lbNavOeuvre(-1);}
+},{passive:true});
 
 init();
 </script>
