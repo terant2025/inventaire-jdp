@@ -47,7 +47,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12
 #gallery.list-mode{grid-template-columns:1fr;gap:1px}
 
 .card{background:var(--surface);border:2px solid transparent;cursor:pointer;transition:border-color .2s;overflow:hidden}
-.card:hover{border-color:var(--gold)}.card.hidden{display:none}
+.card:hover{border-color:var(--gold)}
 .ci{aspect-ratio:1;overflow:hidden;background:var(--bg2);display:flex;align-items:center;justify-content:center;position:relative}
 .ci img{width:100%;height:100%;object-fit:cover;display:block;filter:brightness(.82) saturate(.85);transition:transform .5s,filter .4s}
 .card:hover .ci img{transform:scale(1.05);filter:brightness(1) saturate(1)}
@@ -62,14 +62,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12
 .s-disponible{color:#2d6a4f}.s-vendu{color:#c0392b}.s-expose{color:#2c5f8a}.s-collection{color:#6b3fa0}
 .cst{font-size:8px;letter-spacing:.1em;text-transform:uppercase;margin-top:3px}
 
-/* liste */
 .lc{display:grid;grid-template-columns:56px 1fr;align-items:center}
 .lc .ci{aspect-ratio:unset;width:56px;height:52px}
 .lc .cb{padding:8px 14px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;border-left:1px solid var(--border)}
 .lc .ct{font-size:13px;margin-bottom:0;flex:1;min-width:130px}
 .lc .cs{display:none}
 
-/* en-têtes séries */
 .sh{grid-column:1/-1;padding:26px 0 9px;border-bottom:1px solid var(--border);margin-bottom:2px;display:flex;align-items:baseline;gap:12px}
 .sh h2{font-family:var(--serif);font-size:21px;font-weight:300;letter-spacing:.1em;color:var(--text)}
 .sh span{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
@@ -78,7 +76,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12
 .empty .ic{font-size:36px;opacity:.2;margin-bottom:12px}
 .empty p{font-family:var(--serif);font-style:italic;font-size:17px}
 
-/* lightbox */
+/* LIGHTBOX */
 #lb{display:none;position:fixed;inset:0;z-index:1000;background:rgba(6,6,5,.98);flex-direction:column}
 #lb.open{display:flex}
 .liz{flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:0 68px;min-height:0;overflow:hidden}
@@ -87,7 +85,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12
 .la{position:absolute;top:50%;transform:translateY(-50%);background:rgba(18,18,16,.85);border:1px solid var(--border2);color:var(--muted);width:46px;height:46px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;transition:all .2s;user-select:none}
 .la:hover{background:var(--surface);color:var(--text);border-color:var(--accent)}
 #lp{left:10px}#ln{right:10px}
-#lx{position:absolute;top:16px;right:22px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;transition:color .2s;z-index:10;line-height:1;padding:4px}
+#lx{position:absolute;top:16px;right:22px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;z-index:10;line-height:1;padding:4px;transition:color .2s}
 #lx:hover{color:var(--text)}
 #lco{position:absolute;top:20px;left:50%;transform:translateX(-50%);font-size:9px;letter-spacing:.2em;color:var(--muted);text-transform:uppercase;pointer-events:none;white-space:nowrap}
 .lbot{width:100%;flex-shrink:0;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:12px 76px 16px;background:linear-gradient(to top,rgba(6,6,5,.98) 55%,transparent)}
@@ -95,10 +93,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12
 #lti{font-family:var(--serif);font-size:19px;font-weight:300;color:var(--text);margin-bottom:4px;line-height:1.2}
 #lde{font-size:10px;color:var(--muted);line-height:1.9}
 #lde strong{color:var(--accent);font-weight:300}
-.lvs{display:flex;align-items:center;gap:3px;flex-shrink:0}
-.lv{width:48px;height:48px;object-fit:cover;cursor:pointer;opacity:.3;border:1px solid transparent;transition:all .2s;flex-shrink:0}
+/* Strip vignettes — navigation entre vues d'une même œuvre */
+.lvs{display:flex;align-items:center;gap:3px;flex-shrink:0;max-width:40vw;overflow-x:auto}
+.lv{width:48px;height:48px;object-fit:cover;cursor:pointer;opacity:.3;border:2px solid transparent;transition:all .2s;flex-shrink:0}
 .lv.active,.lv:hover{opacity:1;border-color:var(--gold)}
-.lvp{width:48px;height:48px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:14px;opacity:.2;cursor:pointer;border:1px solid transparent;transition:all .2s}
+.lvp{width:48px;height:48px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:14px;opacity:.2;cursor:pointer;border:2px solid transparent;transition:all .2s;flex-shrink:0}
 .lvp.active,.lvp:hover{opacity:.6;border-color:var(--gold)}
 
 .site-footer{padding:24px 52px;border-top:1px solid var(--border);text-align:center;font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
@@ -155,23 +154,22 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12
   <div class="fr">
     <span class="cnt" id="cnt">—</span>
     <div class="vt">
-      <button class="vb active" id="bg" onclick="setView('grid')" title="Grille">⊞</button>
-      <button class="vb" id="bl" onclick="setView('list')" title="Liste">☰</button>
+      <button class="vb active" id="bg" onclick="setView('grid')">⊞</button>
+      <button class="vb" id="bl" onclick="setView('list')">☰</button>
     </div>
   </div>
 </div>
 
 <div id="gallery"></div>
-
 <div class="site-footer">Julie de Pierrepont — Art Textile Contemporain &ensp;·&ensp; <a href="index.html">← Retour au site</a></div>
 
 <div id="lb">
   <button id="lx" onclick="closeLB()">✕</button>
   <div id="lco"></div>
   <div class="liz">
-    <button class="la" id="lp" onclick="lbNav(-1)">←</button>
+    <button class="la" id="lp" onclick="lbNavOeuvre(-1)">←</button>
     <img id="li" src="" alt="">
-    <button class="la" id="ln" onclick="lbNav(1)">→</button>
+    <button class="la" id="ln" onclick="lbNavOeuvre(1)">→</button>
   </div>
   <div class="lbot">
     <div><div id="lse"></div><div id="lti"></div><div id="lde"></div></div>
@@ -184,80 +182,86 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getFirestore, collection, getDocs, onSnapshot }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-const CONF = {
-  apiKey:"AIzaSyDw27kfc2K5N8_kXlbE3rYLu0KJRLu2lqE",
-  authDomain:"inventaire-jdp.firebaseapp.com",
-  projectId:"inventaire-jdp",
-  storageBucket:"inventaire-jdp.firebasestorage.app",
-  messagingSenderId:"944682383871",
-  appId:"1:944682383871:web:d91538cfbe3a339979cfca"
-};
-const app = initializeApp(CONF);
-const fdb = getFirestore(app);
+const CONF={apiKey:"AIzaSyDw27kfc2K5N8_kXlbE3rYLu0KJRLu2lqE",authDomain:"inventaire-jdp.firebaseapp.com",projectId:"inventaire-jdp",storageBucket:"inventaire-jdp.firebasestorage.app",messagingSenderId:"944682383871",appId:"1:944682383871:web:d91538cfbe3a339979cfca"};
+const app=initializeApp(CONF);
+const fdb=getFirestore(app);
 
-// ── ÉTAT ──────────────────────────────────────────────────────
-let oeuvres=[], series=[], lbList=[], lbIdx=0, lbVue=0, view='grid';
+let oeuvres=[],series=[],lbList=[],lbOeuvre=0,lbVue=0,view='grid';
 let filters={serie:'',annee:'',statut:''};
 const SL={disponible:'Disponible',vendu:'Vendu',expose:'Exposé',collection:'Collection privée'};
 const SC={disponible:'s-disponible',vendu:'s-vendu',expose:'s-expose',collection:'s-collection'};
 
-// ── IMAGE PRINCIPALE ──────────────────────────────────────────
-// Reproduit exactement la logique de l'inventaire (mainVue/mainImg)
-function mainImg(o){
-  // Si l'œuvre a un tableau vues[], chercher la vue principale
+// ══════════════════════════════════════════════════════════════
+// STRUCTURE FIREBASE (reproduit exactement l'inventaire) :
+//
+// Document Firestore "oeuvres/{id}" :
+//   imgUrl   : string  — base64 300px (importée par PowerShell, vignette)
+//   vues[]   : array   — [{id, imgUrl:base64_1200px, fichier, principale}]
+//                        uploadées via le panneau de l'inventaire (grandes images)
+//   groupe   : string  — identifiant partagé entre plusieurs documents liés
+//   titre, serie, annee, technique, hauteur, largeur, profondeur, statut, prix...
+//
+// Une "œuvre" dans la galerie = 1 document (ou groupe de documents liés)
+// Les "vues" d'une œuvre = o.vues[] du document représentant
+// Les "vues groupées" = plusieurs documents partageant le même o.groupe
+//
+// Priorité image grille  : vues[principale].imgUrl || vues[0].imgUrl || imgUrl
+// Priorité image lightbox: idem (1200px si disponible, sinon 300px)
+// ══════════════════════════════════════════════════════════════
+
+// Image principale d'un document (reproduit mainVue/mainImg de l'inventaire)
+function getMainImg(o){
   if(o.vues&&o.vues.length){
     const v=o.vues.find(v=>v.principale)||o.vues[0];
-    return v.imgUrl||'';
+    return v.imgUrl||o.imgUrl||'';
   }
-  // Sinon imgUrl directement sur le document
   return o.imgUrl||'';
 }
 
-// ── CONSOLIDATION GROUPES ─────────────────────────────────────
-// Reproduit buildDisplayList de l'inventaire :
-// - les membres d'un groupe sont cherchés dans TOUS les oeuvres (pas seulement filtered)
-// - le représentant est le membre avec une image
+// Toutes les vues d'un document (vues[] internes)
+function getVues(o){
+  if(o.vues&&o.vues.length) return o.vues;
+  // Pas de vues[] → l'imgUrl seule constitue la vue unique
+  return [{imgUrl:o.imgUrl||'',fichier:o.fichier||'',principale:true}];
+}
+
+// Construire la liste lightbox :
+// Chaque entrée = un document (ou groupe de documents)
+// Les flèches naviguent entre entrées
+// Les vignettes bas naviguent entre vues[] du document courant
 function buildLbList(filtered){
-  const seen=new Set(); const out=[];
+  const seen=new Set();
+  const out=[];
   filtered.forEach(o=>{
     if(!o.groupe){
-      out.push({rep:o, vues:[o]});
+      // Œuvre seule — ses vues sont o.vues[]
+      out.push({rep:o, membres:[o]});
       return;
     }
     if(seen.has(o.groupe)) return;
     seen.add(o.groupe);
-    // Chercher TOUS les membres du groupe dans oeuvres (pas filtered)
-    const members = oeuvres.filter(x=>x.groupe===o.groupe);
-    const rep     = members.find(x=>mainImg(x)) || members[0];
-    out.push({rep, vues:members});
+    // Groupe — chercher TOUS les membres dans oeuvres (pas filtered)
+    const membres=oeuvres.filter(x=>x.groupe===o.groupe);
+    const rep=membres.find(x=>getMainImg(x))||membres[0];
+    out.push({rep, membres});
   });
   return out;
 }
 
-// ── CHARGEMENT ────────────────────────────────────────────────
 async function init(){
-  try{
-    const cfg=await getDocs(collection(fdb,'config'));
-    cfg.forEach(d=>{if(d.id==='series')series=d.data().list||[];});
-  }catch(e){series=[];}
-
-  onSnapshot(collection(fdb,'oeuvres'), snap=>{
+  try{const cfg=await getDocs(collection(fdb,'config'));cfg.forEach(d=>{if(d.id==='series')series=d.data().list||[];});}catch(e){series=[];}
+  onSnapshot(collection(fdb,'oeuvres'),snap=>{
     oeuvres=snap.docs.map(d=>({id:d.id,...d.data()}));
-    buildTabs();
-    applyFilters();
-    const l=document.getElementById('loading');
-    l.classList.add('out');
-    setTimeout(()=>l.style.display='none',400);
+    buildTabs();applyFilters();
+    const l=document.getElementById('loading');l.classList.add('out');setTimeout(()=>l.style.display='none',400);
   });
 }
 
-// ── ONGLETS FILTRES ───────────────────────────────────────────
 function buildTabs(){
   const allS=[...series,...oeuvres.map(o=>o.serie).filter(s=>s&&!series.includes(s))];
   const sc=document.getElementById('ts');
   sc.innerHTML=`<button class="tab${!filters.serie?' active':''}" onclick="setFilter('serie','',this)">Toutes</button>`;
   allS.forEach(s=>{const b=document.createElement('button');b.className='tab'+(filters.serie===s?' active':'');b.textContent=s;b.onclick=()=>setFilter('serie',s,b);sc.appendChild(b);});
-
   const years=[...new Set(oeuvres.map(o=>o.annee).filter(Boolean))].sort((a,b)=>b-a);
   const ac=document.getElementById('ta');
   ac.innerHTML=`<button class="tab${!filters.annee?' active':''}" onclick="setFilter('annee','',this)">Toutes</button>`;
@@ -277,8 +281,7 @@ function applyFilters(){
     if(filters.annee&&o.annee!==filters.annee)return false;
     if(filters.statut&&o.statut!==filters.statut)return false;
     return true;
-  });
-  f.sort((a,b)=>{
+  }).sort((a,b)=>{
     const ai=series.indexOf(a.serie),bi=series.indexOf(b.serie);
     const ad=ai<0?999:ai,bd=bi<0?999:bi;
     return ad!==bd?ad-bd:(a.annee||'').localeCompare(b.annee||'');
@@ -289,17 +292,11 @@ function applyFilters(){
   render(f);
 }
 
-// ── RENDU ─────────────────────────────────────────────────────
 function render(filtered){
-  const g=document.getElementById('gallery');
-  g.innerHTML='';
-  if(!lbList.length){
-    g.innerHTML='<div class="empty"><div class="ic">🧵</div><p>Aucune œuvre ne correspond</p></div>';
-    return;
-  }
+  const g=document.getElementById('gallery');g.innerHTML='';
+  if(!lbList.length){g.innerHTML='<div class="empty"><div class="ic">🧵</div><p>Aucune œuvre ne correspond</p></div>';return;}
   if(view==='grid'){
     g.className='';
-    // Grouper par série avec en-têtes
     const allS=[...series,...lbList.map(x=>x.rep.serie).filter(s=>s&&!series.includes(s)),'Sans série'];
     const byS={};
     lbList.forEach(item=>{const k=item.rep.serie||'Sans série';if(!byS[k])byS[k]=[];byS[k].push(item);});
@@ -308,10 +305,7 @@ function render(filtered){
       const h=document.createElement('div');h.className='sh';
       h.innerHTML=`<h2>${s}</h2><span>${byS[s].length} œuvre${byS[s].length>1?'s':''}</span>`;
       g.appendChild(h);
-      byS[s].forEach((item,_)=>{
-        const oi=lbList.indexOf(item);
-        g.appendChild(makeCard(item,oi,false));
-      });
+      byS[s].forEach(item=>g.appendChild(makeCard(item,lbList.indexOf(item),false)));
     });
   } else {
     g.className='list-mode';
@@ -320,17 +314,25 @@ function render(filtered){
 }
 
 function makeCard(item,oi,isList){
-  const {rep,vues}=item;
-  const img=mainImg(rep);
+  const {rep}=item;
+  const img=getMainImg(rep);
   const dims=[rep.hauteur,rep.largeur,rep.profondeur].filter(Boolean).join(' × ');
   const tech=[rep.annee,rep.technique].filter(Boolean).join(' — ');
-  const nbVues=vues.length;
+
+  // Compter TOUTES les vues : vues[] internes + membres du groupe
+  const vuesInternes=getVues(rep).length;
+  const nbMembres=item.membres.length;
+  // Total affiché = vues internes du représentant + (membres-1) si groupe
+  const totalVues = nbMembres>1
+    ? nbMembres  // groupe : 1 entrée par membre
+    : vuesInternes; // œuvre seule : ses vues internes
+
   const d=document.createElement('div');
   d.className='card'+(isList?' lc':'');
   d.innerHTML=`
     <div class="ci">
       ${img?`<img src="${img}" alt="${(rep.titre||'').replace(/"/g,'&quot;')}" loading="lazy">`:'<div class="ci-ph">🖼</div>'}
-      ${nbVues>1?`<span class="cbadge">+${nbVues-1} vue${nbVues>2?'s':''}</span>`:''}
+      ${totalVues>1?`<span class="cbadge">+${totalVues-1} vue${totalVues>2?'s':''}</span>`:''}
     </div>
     <div class="cb">
       <div class="cs">${rep.serie||'—'}</div>
@@ -351,8 +353,31 @@ window.setView=v=>{
 };
 
 // ── LIGHTBOX ──────────────────────────────────────────────────
+// lbOeuvre = index dans lbList (quelle œuvre / entrée)
+// lbVue    = index dans la liste des vues de cette entrée
+//
+// Les "vues" en lightbox sont construites ainsi :
+//   - Si œuvre seule   : o.vues[] du document (grandes images 1200px)
+//   - Si groupe        : une vue par membre (chacun avec ses propres vues[])
+//
+// La strip du bas = vignettes pour naviguer entre vues de l'entrée courante
+
+function getLbVues(item){
+  // Pour un groupe : chaque membre contribue une "vue" (sa première image)
+  if(item.membres.length>1){
+    return item.membres.map(m=>({
+      imgUrl: getMainImg(m),
+      titre:  m.titre||m.fichier||'',
+      doc:    m
+    }));
+  }
+  // Œuvre seule : ses vues[] internes (grandes images)
+  const vues=getVues(item.rep);
+  return vues.map(v=>({imgUrl:v.imgUrl||'',titre:v.fichier||'',doc:item.rep}));
+}
+
 function openLB(oi,vi){
-  lbIdx=oi;lbVue=vi||0;
+  lbOeuvre=oi;lbVue=vi||0;
   document.getElementById('lb').classList.add('open');
   document.body.style.overflow='hidden';
   document.addEventListener('keydown',lbKey);
@@ -363,15 +388,24 @@ window.closeLB=()=>{
   document.body.style.overflow='';
   document.removeEventListener('keydown',lbKey);
 };
-window.lbNav=d=>{lbIdx=(lbIdx+d+lbList.length)%lbList.length;lbVue=0;renderLB();};
+window.lbNavOeuvre=d=>{lbOeuvre=(lbOeuvre+d+lbList.length)%lbList.length;lbVue=0;renderLB();};
+function lbNavVue(vi){lbVue=vi;renderLB();}
 
 function renderLB(){
-  const {rep,vues}=lbList[lbIdx];
-  const vue=vues[lbVue]||vues[0]||rep;
-  const img=document.getElementById('li');
-  img.classList.add('fade');
-  setTimeout(()=>{img.src=mainImg(vue)||mainImg(rep)||'';img.classList.remove('fade');},180);
-  document.getElementById('lco').textContent=(lbIdx+1)+' / '+lbList.length;
+  const item=lbList[lbOeuvre];
+  const {rep}=item;
+  const vues=getLbVues(item);
+  const vue=vues[lbVue]||vues[0];
+
+  // Image plein écran
+  const imgEl=document.getElementById('li');
+  imgEl.classList.add('fade');
+  setTimeout(()=>{imgEl.src=vue.imgUrl||'';imgEl.classList.remove('fade');},180);
+
+  // Compteur œuvres
+  document.getElementById('lco').textContent=(lbOeuvre+1)+' / '+lbList.length;
+
+  // Méta (toujours depuis le représentant)
   document.getElementById('lse').textContent=rep.serie||'';
   document.getElementById('lti').textContent=rep.titre||rep.fichier||'Sans titre';
   const dims=[rep.hauteur,rep.largeur,rep.profondeur].filter(Boolean).join(' × ');
@@ -380,22 +414,23 @@ function renderLB(){
   if(rep.technique)det.push(rep.technique);
   if(dims)det.push(dims+' cm');
   document.getElementById('lde').innerHTML=det.join('&ensp;·&ensp;');
-  // Vignettes vues
+
+  // Strip vignettes — seulement si plusieurs vues
   const strip=document.getElementById('lvs');
   strip.innerHTML='';
   if(vues.length>1){
     vues.forEach((v,i)=>{
-      const img2=mainImg(v);
-      if(img2){
+      if(v.imgUrl){
         const t=document.createElement('img');
         t.className='lv'+(i===lbVue?' active':'');
-        t.src=img2;t.title='Vue '+(i+1);
-        t.onclick=()=>{lbVue=i;renderLB();};
+        t.src=v.imgUrl;
+        t.title=v.titre||('Vue '+(i+1));
+        t.onclick=()=>lbNavVue(i);
         strip.appendChild(t);
       } else {
         const t=document.createElement('div');
         t.className='lvp'+(i===lbVue?' active':'');
-        t.textContent='🖼';t.onclick=()=>{lbVue=i;renderLB();};
+        t.textContent='🖼';t.onclick=()=>lbNavVue(i);
         strip.appendChild(t);
       }
     });
@@ -404,15 +439,15 @@ function renderLB(){
 
 function lbKey(e){
   if(e.key==='Escape')closeLB();
-  if(e.key==='ArrowRight')lbNav(1);
-  if(e.key==='ArrowLeft')lbNav(-1);
-  if(e.key==='ArrowUp'){lbVue=Math.max(0,lbVue-1);renderLB();}
-  if(e.key==='ArrowDown'){const v=lbList[lbIdx]?.vues||[];lbVue=Math.min(v.length-1,lbVue+1);renderLB();}
+  if(e.key==='ArrowRight')lbNavOeuvre(1);
+  if(e.key==='ArrowLeft')lbNavOeuvre(-1);
+  if(e.key==='ArrowUp'){const v=getLbVues(lbList[lbOeuvre]);lbVue=Math.max(0,lbVue-1);renderLB();}
+  if(e.key==='ArrowDown'){const v=getLbVues(lbList[lbOeuvre]);lbVue=Math.min(v.length-1,lbVue+1);renderLB();}
 }
 document.getElementById('lb').addEventListener('click',e=>{if(e.target===document.getElementById('lb'))closeLB();});
 let tsX=0;
 document.getElementById('lb').addEventListener('touchstart',e=>{tsX=e.touches[0].clientX;},{passive:true});
-document.getElementById('lb').addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tsX;if(Math.abs(dx)>50){dx<0?lbNav(1):lbNav(-1);}},{passive:true});
+document.getElementById('lb').addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tsX;if(Math.abs(dx)>50){dx<0?lbNavOeuvre(1):lbNavOeuvre(-1);}},{passive:true});
 
 init();
 </script>
