@@ -1476,7 +1476,7 @@ window.handleFileImport=async input=>{
   input.value='';
 };
 
-// Génère une vignette 300px depuis une image base64 dans le navigateur
+// Génère une vignette 300px depuis un base64 HD dans le navigateur
 function generateThumb(hdBase64, maxW=300){
   return new Promise(resolve=>{
     if(!hdBase64){resolve('');return;}
@@ -1494,25 +1494,6 @@ function generateThumb(hdBase64, maxW=300){
   });
 }
 
-// Génère une vignette 300px depuis une URL (Storage)
-function generateThumbFromUrl(url, maxW=300){
-  return new Promise(resolve=>{
-    if(!url){resolve('');return;}
-    const img=new Image();
-    img.crossOrigin='anonymous';
-    img.onload=()=>{
-      const ratio=Math.min(maxW/img.width,1.0);
-      const w=Math.round(img.width*ratio), h=Math.round(img.height*ratio);
-      const cv=document.createElement('canvas');
-      cv.width=w;cv.height=h;
-      cv.getContext('2d').drawImage(img,0,0,w,h);
-      resolve(cv.toDataURL('image/jpeg',0.82));
-    };
-    img.onerror=()=>resolve('');
-    img.src=url;
-  });
-}
-
 async function importJSON(text){
   const arr=JSON.parse(text);
   const items=Array.isArray(arr)?arr:(arr.items||[]);
@@ -1522,12 +1503,12 @@ async function importJSON(text){
   progWrap.style.display='block';setSyncState('saving');
   let added=0,updated=0;
 
-  // Détecter format :
-  // - nouveau Storage  : a thumb (base64) + hdUrl (URL Storage)
-  // - nouveau base64   : a hd (base64 HD)
-  // - ancien           : a imgUrl
-  const hasHdUrl  = items.length>0 && 'hdUrl' in items[0];
-  const hasHdB64  = items.length>0 && 'hd' in items[0] && !('hdUrl' in items[0]);
+  // Formats supportés :
+  // 1. Nouveau Storage : {thumb, hdUrl, fichier, dossier, ...}
+  // 2. Nouveau base64  : {hd, fichier, dossier, ...}
+  // 3. Ancien          : {imgUrl, fichier, ...}
+  const hasHdUrl = items.length>0 && 'hdUrl' in items[0];
+  const hasHdB64 = items.length>0 && 'hd' in items[0] && !hasHdUrl;
 
   const BATCH=100;
   for(let start=0;start<items.length;start+=BATCH){
@@ -1546,168 +1527,92 @@ async function importJSON(text){
       );
 
       if(hasHdUrl){
-        // ── Format Storage : thumb base64 + hdUrl Storage ────
-        // thumb est directement dans le JSON — pas besoin de CORS
-        const thumb = item.thumb||'';
-
+        // Format 1 : thumb base64 dans le JSON, hdUrl = Storage
+        const thumb=item.thumb||'';
         if(exists){
           updated++;
-          if(thumb){ wb.update(doc(fdb,'oeuvres',exists.id),{imgUrl:thumb}); ops++; }
+          if(thumb){wb.update(doc(fdb,'oeuvres',exists.id),{imgUrl:thumb});ops++;}
           if(item.hdUrl){
             wb.set(doc(fdb,'images','hd_'+exists.id),{
-              oeuvreId:exists.id, fichier:item.fichier,
-              vueIndex:0, principale:true,
-              hdUrl:item.hdUrl, hdW:item.hdW||0,
-            }); ops++;
+              oeuvreId:exists.id,fichier:item.fichier,
+              vueIndex:0,principale:true,hdUrl:item.hdUrl,hdW:item.hdW||0,
+            });ops++;
           }
         } else {
           added++;
           const newId='img_'+Math.random().toString(36).slice(2,10);
           wb.set(doc(fdb,'oeuvres',newId),{
-            fichier:item.fichier, dossier:item.dossier||'',
+            fichier:item.fichier,dossier:item.dossier||'',
             chemin_rel:item.chemin_rel||'',
             serie:'',titre:'',annee:'',technique:'',
             hauteur:'',largeur:'',profondeur:'',
             prix:'',statut:'',localisation:'',notes:'',
             imgUrl:thumb||'',
-          }); ops++;
+          });ops++;
           if(item.hdUrl){
             wb.set(doc(fdb,'images','hd_'+newId),{
-              oeuvreId:newId, fichier:item.fichier,
-              vueIndex:0, principale:true,
-              hdUrl:item.hdUrl, hdW:item.hdW||0,
-            }); ops++;
+              oeuvreId:newId,fichier:item.fichier,
+              vueIndex:0,principale:true,hdUrl:item.hdUrl,hdW:item.hdW||0,
+            });ops++;
           }
         }
 
       } else if(hasHdB64){
-        // ── Format base64 hd : générer vignette canvas ───────
-        const thumb=await generateThumb(item.hd, 300);
+        // Format 2 : hd base64 — générer thumb en canvas
+        const thumb=await generateThumb(item.hd,300);
         if(exists){
           updated++;
-          if(thumb){ wb.update(doc(fdb,'oeuvres',exists.id),{imgUrl:thumb}); ops++; }
+          if(thumb){wb.update(doc(fdb,'oeuvres',exists.id),{imgUrl:thumb});ops++;}
           if(item.hd){
             wb.set(doc(fdb,'images','hd_'+exists.id),{
-              oeuvreId:exists.id, fichier:item.fichier,
-              vueIndex:0, principale:true,
-              hd:item.hd, hdW:item.hdW||0,
-            }); ops++;
+              oeuvreId:exists.id,fichier:item.fichier,
+              vueIndex:0,principale:true,hd:item.hd,hdW:item.hdW||0,
+            });ops++;
           }
         } else {
           added++;
           const newId='img_'+Math.random().toString(36).slice(2,10);
           wb.set(doc(fdb,'oeuvres',newId),{
-            fichier:item.fichier, dossier:item.dossier||'',
+            fichier:item.fichier,dossier:item.dossier||'',
             chemin_rel:item.chemin_rel||'',
             serie:'',titre:'',annee:'',technique:'',
             hauteur:'',largeur:'',profondeur:'',
             prix:'',statut:'',localisation:'',notes:'',
             imgUrl:thumb||'',
-          }); ops++;
+          });ops++;
           if(item.hd){
             wb.set(doc(fdb,'images','hd_'+newId),{
-              oeuvreId:newId, fichier:item.fichier,
-              vueIndex:0, principale:true,
-              hd:item.hd, hdW:item.hdW||0,
-            }); ops++;
+              oeuvreId:newId,fichier:item.fichier,
+              vueIndex:0,principale:true,hd:item.hd,hdW:item.hdW||0,
+            });ops++;
           }
         }
 
       } else {
-        // ── Ancien format imgUrl ──────────────────────────────
+        // Format 3 : ancien format imgUrl
         const obj=normalizeItem(item);
         if(obj.serie&&!series.includes(obj.serie)) series.push(obj.serie);
-        if(exists){ updated++; wb.update(doc(fdb,'oeuvres',exists.id),{imgUrl:obj.vues[0].imgUrl}); ops++; }
-        else { added++; const{id,...data}=obj; wb.set(doc(fdb,'oeuvres',id),data); ops++; }
+        if(exists){
+          updated++;
+          wb.update(doc(fdb,'oeuvres',exists.id),{imgUrl:obj.vues[0].imgUrl});ops++;
+        } else {
+          added++;
+          const{id,...data}=obj;
+          wb.set(doc(fdb,'oeuvres',id),data);ops++;
+        }
       }
 
-      if(ops>=490){ await wb.commit(); ops=0; }
+      if(ops>=490){await wb.commit();ops=0;}
     }
     if(ops>0) await wb.commit();
   }
 
   await fsSetSeriesConfig();
   setSyncState('saved');
-  progWrap.style.display='none'; bar.style.width='0%';
+  progWrap.style.display='none';bar.style.width='0%';
   toast(`✓ ${added} ajoutées · ${updated} mises à jour`);
 }
-  const arr=JSON.parse(text);
-  const items=Array.isArray(arr)?arr:(arr.items||[]);
-  const progWrap=document.getElementById('import-progress');
-  const bar=document.getElementById('import-bar');
-  const label=document.getElementById('import-label');
-  progWrap.style.display='block';setSyncState('saving');
-  let added=0,updated=0;
 
-  // Détecter format : nouveau (a hd) ou ancien (a imgUrl)
-  const isNewFormat=items.length>0 && 'hd' in items[0];
-
-  const BATCH=100; // petit batch car génération vignette est async
-  for(let start=0;start<items.length;start+=BATCH){
-    const chunk=items.slice(start,start+BATCH);
-    const wb=writeBatch(fdb);
-    let ops=0;
-
-    for(let ci=0;ci<chunk.length;ci++){
-      const item=chunk[ci];
-      bar.style.width=Math.round(((start+ci+1)/items.length)*100)+'%';
-      label.textContent=`Import ${start+ci+1}/${items.length} — ${item.fichier||''}`;
-
-      if(isNewFormat){
-        // Générer la vignette 300px depuis le HD
-        const thumb=await generateThumb(item.hd, 300);
-        const exists=oeuvres.find(o=>
-          o.fichier===item.fichier &&
-          (!item.dossier||!o.dossier||o.dossier===item.dossier)
-        );
-        if(exists){
-          updated++;
-          if(thumb) { wb.update(doc(fdb,'oeuvres',exists.id),{imgUrl:thumb}); ops++; }
-          if(item.hd){
-            wb.set(doc(fdb,'images','hd_'+exists.id),{
-              oeuvreId:exists.id, fichier:item.fichier,
-              vueIndex:0, principale:true,
-              hd:item.hd, hdW:item.hdW||0,
-            }); ops++;
-          }
-        } else {
-          added++;
-          const newId='img_'+Math.random().toString(36).slice(2,10);
-          wb.set(doc(fdb,'oeuvres',newId),{
-            fichier:item.fichier, dossier:item.dossier||'',
-            chemin_rel:item.chemin_rel||'',
-            serie:'',titre:'',annee:'',technique:'',
-            hauteur:'',largeur:'',profondeur:'',
-            prix:'',statut:'',localisation:'',notes:'',
-            imgUrl:thumb||'',
-          }); ops++;
-          if(item.hd){
-            wb.set(doc(fdb,'images','hd_'+newId),{
-              oeuvreId:newId, fichier:item.fichier,
-              vueIndex:0, principale:true,
-              hd:item.hd, hdW:item.hdW||0,
-            }); ops++;
-          }
-        }
-      } else {
-        // Ancien format imgUrl
-        const obj=normalizeItem(item);
-        if(obj.serie&&!series.includes(obj.serie)) series.push(obj.serie);
-        const exists=oeuvres.find(o=>o.fichier===obj.fichier);
-        if(exists){ updated++; wb.update(doc(fdb,'oeuvres',exists.id),{imgUrl:obj.vues[0].imgUrl}); ops++; }
-        else { added++; const{id,...data}=obj; wb.set(doc(fdb,'oeuvres',id),data); ops++; }
-      }
-
-      if(ops>=490){ await wb.commit(); ops=0; }
-    }
-    if(ops>0) await wb.commit();
-  }
-
-  await fsSetSeriesConfig();
-  setSyncState('saved');
-  progWrap.style.display='none'; bar.style.width='0%';
-  toast(`✓ ${added} ajoutées · ${updated} mises à jour`);
-}
 
 async function importCSVData(text){
   const bom=text.charCodeAt(0)===0xFEFF;
