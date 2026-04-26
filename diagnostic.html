@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Diagnostic Firebase — JDP</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:monospace;font-size:13px;background:#0c0c0b;color:#e6e0d8;padding:24px}
+h1{color:#c4a45a;margin-bottom:20px;font-size:18px}
+h2{color:#a09080;margin:20px 0 8px;font-size:14px;border-bottom:1px solid #252520;padding-bottom:4px}
+.ok{color:#2d6a4f}.warn{color:#c4a45a}.err{color:#c0392b}
+.section{background:#1a1a17;border:1px solid #252520;padding:16px;margin-bottom:16px}
+.stat{display:flex;gap:12px;margin:4px 0}
+.stat .label{color:#6e6860;width:220px;flex-shrink:0}
+.stat .val{color:#e6e0d8}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:11px}
+th{background:#252520;color:#a09080;padding:6px 8px;text-align:left}
+td{padding:5px 8px;border-bottom:1px solid #1a1a17;vertical-align:top}
+tr:hover td{background:#1f1f1c}
+.img-preview{width:48px;height:48px;object-fit:cover;border:1px solid #252520}
+.badge{display:inline-block;padding:2px 6px;font-size:10px;border-radius:2px}
+.badge.ok{background:#1a3d2b;color:#2d6a4f}
+.badge.warn{background:#3d3010;color:#c4a45a}
+.badge.err{background:#3d1010;color:#c0392b}
+button{background:#c4a45a;color:#0c0c0b;border:none;padding:8px 16px;cursor:pointer;font-family:monospace;font-size:12px;margin-right:8px;margin-bottom:8px}
+button:hover{background:#e8d5a3}
+#log{background:#141412;border:1px solid #252520;padding:12px;height:120px;overflow-y:auto;margin-bottom:16px;font-size:11px;color:#6e6860}
+</style>
+</head>
+<body>
+<h1>🔍 Diagnostic Firebase — Inventaire Julie de Pierrepont</h1>
+
+<div id="log"></div>
+
+<button onclick="runDiag()">▶ Lancer le diagnostic</button>
+<button onclick="document.getElementById('log').innerHTML=''">Effacer log</button>
+
+<div id="results"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFirestore, collection, getDocs }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const CONF={
+  apiKey:"AIzaSyDw27kfc2K5N8_kXlbE3rYLu0KJRLu2lqE",
+  authDomain:"inventaire-jdp.firebaseapp.com",
+  projectId:"inventaire-jdp",
+  storageBucket:"inventaire-jdp.firebasestorage.app",
+  messagingSenderId:"944682383871",
+  appId:"1:944682383871:web:d91538cfbe3a339979cfca"
+};
+const app=initializeApp(CONF);
+const fdb=getFirestore(app);
+
+function log(msg, cls=''){
+  const d=document.getElementById('log');
+  d.innerHTML+=`<span class="${cls}">${msg}</span>\n`;
+  d.scrollTop=d.scrollHeight;
+}
+
+window.runDiag = async function(){
+  document.getElementById('results').innerHTML='';
+  log('Démarrage diagnostic...','ok');
+
+  // ── 1. OEUVRES ───────────────────────────────────────────
+  log('Chargement collection oeuvres...');
+  const oSnap = await getDocs(collection(fdb,'oeuvres'));
+  const oeuvres = oSnap.docs.map(d=>({id:d.id,...d.data()}));
+  log(`  ${oeuvres.length} documents trouvés`,'ok');
+
+  // Analyse oeuvres
+  const stats = {
+    total:        oeuvres.length,
+    avecImgUrl:   oeuvres.filter(o=>o.imgUrl&&o.imgUrl.length>10).length,
+    sansImgUrl:   oeuvres.filter(o=>!o.imgUrl||o.imgUrl.length<=10).length,
+    avecTitre:    oeuvres.filter(o=>o.titre).length,
+    sansTitre:    oeuvres.filter(o=>!o.titre).length,
+    avecSerie:    oeuvres.filter(o=>o.serie).length,
+    sansSerie:    oeuvres.filter(o=>!o.serie).length,
+    avecVues:     oeuvres.filter(o=>o.vues&&o.vues.length>0).length,
+    avecGroupe:   oeuvres.filter(o=>o.groupe).length,
+    avecRef:      oeuvres.filter(o=>o.ref).length,
+  };
+
+  // Types imgUrl
+  const imgTypes = {
+    base64:   oeuvres.filter(o=>o.imgUrl&&o.imgUrl.startsWith('data:')).length,
+    url:      oeuvres.filter(o=>o.imgUrl&&o.imgUrl.startsWith('http')).length,
+    vide:     oeuvres.filter(o=>!o.imgUrl||o.imgUrl==='').length,
+    autre:    oeuvres.filter(o=>o.imgUrl&&!o.imgUrl.startsWith('data:')&&!o.imgUrl.startsWith('http')).length,
+  };
+
+  // Taille imgUrl
+  const imgSizes = oeuvres.filter(o=>o.imgUrl&&o.imgUrl.length>10)
+    .map(o=>o.imgUrl.length);
+  const avgSize = imgSizes.length ? Math.round(imgSizes.reduce((a,b)=>a+b,0)/imgSizes.length/1024) : 0;
+  const maxSize = imgSizes.length ? Math.round(Math.max(...imgSizes)/1024) : 0;
+  const minSize = imgSizes.length ? Math.round(Math.min(...imgSizes)/1024) : 0;
+
+  // Séries présentes
+  const series = [...new Set(oeuvres.map(o=>o.serie).filter(Boolean))].sort();
+
+  // ── 2. IMAGES ────────────────────────────────────────────
+  log('Chargement collection images...');
+  let imagesCount=0, hdUrlCount=0, hdB64Count=0;
+  try {
+    const iSnap = await getDocs(collection(fdb,'images'));
+    imagesCount = iSnap.docs.length;
+    iSnap.docs.forEach(d=>{
+      const data=d.data();
+      if(data.hdUrl) hdUrlCount++;
+      if(data.hd) hdB64Count++;
+    });
+    log(`  ${imagesCount} documents trouvés`,'ok');
+  } catch(e) {
+    log(`  Erreur ou collection absente : ${e.message}`,'warn');
+  }
+
+  // ── 3. CONFIG ────────────────────────────────────────────
+  log('Chargement config...');
+  let seriesConfig=[];
+  try {
+    const cSnap = await getDocs(collection(fdb,'config'));
+    cSnap.forEach(d=>{ if(d.id==='series') seriesConfig=d.data().list||[]; });
+    log(`  Séries config : ${seriesConfig.length}`,'ok');
+  } catch(e) {
+    log(`  Erreur config : ${e.message}`,'warn');
+  }
+
+  // ── RENDU ────────────────────────────────────────────────
+  const r = document.getElementById('results');
+
+  r.innerHTML = `
+  <div class="section">
+    <h2>📦 Collection oeuvres — ${stats.total} documents</h2>
+    <div class="stat"><span class="label">Total</span><span class="val">${stats.total}</span></div>
+    <div class="stat"><span class="label">Avec imgUrl</span><span class="val ${stats.avecImgUrl===stats.total?'ok':'warn'}">${stats.avecImgUrl} / ${stats.total}</span></div>
+    <div class="stat"><span class="label">Sans imgUrl</span><span class="val ${stats.sansImgUrl===0?'ok':'err'}">${stats.sansImgUrl}</span></div>
+    <div class="stat"><span class="label">Avec titre</span><span class="val">${stats.avecTitre} / ${stats.total}</span></div>
+    <div class="stat"><span class="label">Avec série</span><span class="val">${stats.avecSerie} / ${stats.total}</span></div>
+    <div class="stat"><span class="label">Avec vues[]</span><span class="val">${stats.avecVues}</span></div>
+    <div class="stat"><span class="label">Avec groupe</span><span class="val">${stats.avecGroupe}</span></div>
+    <div class="stat"><span class="label">Avec ref (JDP-xxx)</span><span class="val">${stats.avecRef}</span></div>
+  </div>
+
+  <div class="section">
+    <h2>🖼 Analyse des images (imgUrl)</h2>
+    <div class="stat"><span class="label">Format base64 (data:)</span><span class="val ${imgTypes.base64>0?'ok':'warn'}">${imgTypes.base64}</span></div>
+    <div class="stat"><span class="label">Format URL (http)</span><span class="val">${imgTypes.url}</span></div>
+    <div class="stat"><span class="label">Vide / absent</span><span class="val ${imgTypes.vide===0?'ok':'err'}">${imgTypes.vide}</span></div>
+    <div class="stat"><span class="label">Autre</span><span class="val">${imgTypes.autre}</span></div>
+    <div class="stat"><span class="label">Taille moyenne imgUrl</span><span class="val">${avgSize} Ko</span></div>
+    <div class="stat"><span class="label">Taille min / max</span><span class="val">${minSize} Ko / ${maxSize} Ko</span></div>
+  </div>
+
+  <div class="section">
+    <h2>📁 Collection images — ${imagesCount} documents</h2>
+    <div class="stat"><span class="label">Avec hdUrl (Storage)</span><span class="val ${hdUrlCount>0?'ok':'warn'}">${hdUrlCount}</span></div>
+    <div class="stat"><span class="label">Avec hd (base64)</span><span class="val">${hdB64Count}</span></div>
+    <div class="stat"><span class="label">Couverture vs oeuvres</span><span class="val ${imagesCount>=stats.total?'ok':'warn'}">${imagesCount} / ${stats.total}</span></div>
+  </div>
+
+  <div class="section">
+    <h2>🗂 Séries</h2>
+    <div class="stat"><span class="label">Dans config/series</span><span class="val">${seriesConfig.join(' · ')||'(vide)'}</span></div>
+    <div class="stat"><span class="label">Dans les documents</span><span class="val">${series.join(' · ')||'(aucune)'}</span></div>
+  </div>
+
+  <div class="section">
+    <h2>⚠️ Documents problématiques</h2>
+    ${renderProblems(oeuvres)}
+  </div>
+
+  <div class="section">
+    <h2>🔎 Échantillon — 10 premiers documents</h2>
+    ${renderSample(oeuvres.slice(0,10))}
+  </div>
+  `;
+
+  log('Diagnostic terminé.','ok');
+};
+
+function renderProblems(oeuvres){
+  const problems = oeuvres.filter(o=>
+    !o.imgUrl || o.imgUrl==='' ||
+    !o.serie || !o.titre
+  );
+  if(!problems.length) return '<div class="ok">✓ Aucun problème détecté</div>';
+  return `<table>
+    <tr><th>ID</th><th>Fichier</th><th>Série</th><th>Titre</th><th>imgUrl</th><th>Problèmes</th></tr>
+    ${problems.slice(0,50).map(o=>{
+      const issues=[];
+      if(!o.imgUrl||o.imgUrl==='') issues.push('❌ pas d\'image');
+      if(!o.serie) issues.push('⚠️ pas de série');
+      if(!o.titre) issues.push('⚠️ pas de titre');
+      return `<tr>
+        <td style="font-size:10px;color:#6e6860">${o.id}</td>
+        <td>${o.fichier||'—'}</td>
+        <td>${o.serie||'—'}</td>
+        <td>${o.titre||'—'}</td>
+        <td>${o.imgUrl?'✓ '+Math.round(o.imgUrl.length/1024)+'Ko':'❌ vide'}</td>
+        <td>${issues.join(', ')}</td>
+      </tr>`;
+    }).join('')}
+    ${problems.length>50?`<tr><td colspan="6" style="color:#6e6860">... et ${problems.length-50} autres</td></tr>`:''}
+  </table>`;
+}
+
+function renderSample(oeuvres){
+  return `<table>
+    <tr><th>Aperçu</th><th>ID</th><th>Fichier</th><th>Série</th><th>Titre</th><th>imgUrl</th><th>vues[]</th><th>groupe</th><th>ref</th></tr>
+    ${oeuvres.map(o=>`<tr>
+      <td>${o.imgUrl&&o.imgUrl.startsWith('data:')?`<img class="img-preview" src="${o.imgUrl}">`:'🖼'}</td>
+      <td style="font-size:10px;color:#6e6860">${o.id}</td>
+      <td style="font-size:10px">${o.fichier||'—'}</td>
+      <td>${o.serie||'—'}</td>
+      <td>${o.titre||'—'}</td>
+      <td>${o.imgUrl?`<span class="badge ok">${Math.round(o.imgUrl.length/1024)}Ko</span>`:'<span class="badge err">vide</span>'}</td>
+      <td>${o.vues?o.vues.length:'0'}</td>
+      <td>${o.groupe||'—'}</td>
+      <td>${o.ref||'—'}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+</script>
+</body>
+</html>
