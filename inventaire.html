@@ -349,6 +349,7 @@ main.panel-open{margin-right:var(--panel-w)}
       <option value="image">Sans image</option>
       <option value="titre">Sans titre</option>
       <option value="serie">Sans série</option>
+      <option value="ref">Sans ref JDP-xxx</option>
       <option value="statut">Sans statut</option>
       <option value="technique">Sans technique</option>
       <option value="dimensions">Sans dimensions</option>
@@ -356,6 +357,7 @@ main.panel-open{margin-right:var(--panel-w)}
   </div>
   <div class="toolbar-right">
     <span class="count-badge" id="count-badge">—</span>
+    <button class="btn btn-sm" onclick="openSuggestModal()" title="Suggérer des associations par similarité de nom">⊞ Suggestions</button>
     <div class="view-toggle">
       <button class="view-btn active" id="btn-grid" onclick="setView('grid')">⊞</button>
       <button class="view-btn" id="btn-list" onclick="setView('list')">☰</button>
@@ -470,18 +472,28 @@ main.panel-open{margin-right:var(--panel-w)}
       <label style="color:var(--gold);margin-bottom:8px;display:block">Vues supplémentaires</label>
       <p style="font-size:10px;color:var(--muted);line-height:1.7;margin-bottom:8px">
         Glissez des photos sur l'image ci-dessus pour ajouter des vues.<br>
-        Les métadonnées sont partagées entre toutes les vues d'une même œuvre.
+        Les œuvres partageant le même numéro JDP-xxx sont liées comme vues d'une même œuvre.
       </p>
-      <div style="display:flex;gap:5px">
-        <input type="text" id="f-groupe" placeholder="Identifiant de groupe (auto)" readonly
+      <div style="display:flex;gap:5px;align-items:center">
+        <input type="text" id="f-groupe" placeholder="JDP-xxx partagé entre vues liées" readonly
                style="flex:1;padding:7px 9px;background:var(--bg);border:1px solid var(--border);font-family:monospace;font-size:10px;color:var(--muted);outline:none">
-        <button class="btn btn-sm" onclick="openLinkModal()" title="Lier d'autres œuvres existantes à ce groupe">⊕ Lier</button>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:10px;color:var(--muted);white-space:nowrap">
+          <input type="checkbox" id="f-groupe-principal" style="accent-color:var(--gold)"
+                 onchange="markDirty('groupePrincipal',this.checked)">
+          Photo principale
+        </label>
       </div>
       <datalist id="groupes-list"></datalist>
     </div>
     <div class="field"><label>Dossier d'origine</label><input type="text" id="f-dossier" readonly style="color:var(--muted);font-size:10px;background:var(--bg2);font-family:monospace"></div>
     <div class="field"><label>Fichier</label><input type="text" id="f-fichier" readonly style="color:var(--muted);font-size:10px;background:var(--bg2)"></div>
-    <div class="field"><label>Identifiant œuvre</label><input type="text" id="f-ref" readonly style="color:var(--gold);font-size:10px;background:var(--bg2);font-family:monospace;letter-spacing:.1em"></div>
+    <div class="field">
+      <label>Identifiant œuvre (JDP-xxx)</label>
+      <input type="text" id="f-ref"
+             style="color:var(--gold);font-size:11px;font-family:monospace;letter-spacing:.1em"
+             placeholder="ex: JDP-0001"
+             oninput="markDirty('ref',this.value.trim())">
+    </div>
   </div>
   <div class="panel-footer">
     <button class="btn btn-sm" onclick="deleteOeuvre()" style="border-color:var(--red);color:var(--red);margin-right:auto" title="Supprimer cette entrée de l'inventaire">🗑 Supprimer</button>
@@ -682,6 +694,26 @@ main.panel-open{margin-right:var(--panel-w)}
 
 <div id="toast"></div>
 
+<!-- MODAL SUGGESTIONS D'ASSOCIATION -->
+<div class="modal-overlay" id="modal-suggest">
+  <div class="modal" style="width:720px;max-width:96vw">
+    <div class="modal-header">
+      <span class="modal-title">⊞ Suggestions d'association</span>
+      <button class="btn btn-sm panel-close" onclick="closeModal('modal-suggest')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.7">
+        Les œuvres ci-dessous partagent un nom de fichier similaire — elles sont probablement des vues différentes d'une même pièce.<br>
+        Cliquez sur un groupe pour assigner le même JDP-xxx et marquer la photo principale.
+      </p>
+      <div id="suggest-list" style="display:flex;flex-direction:column;gap:16px;max-height:60vh;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-suggest')">Fermer</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════════════════════════════════════════════
      FIREBASE — accès public (pas d'authentification)
 ══════════════════════════════════════════════════════ -->
@@ -832,7 +864,7 @@ function applyFilters(){
       const hasImg=o.vues?.some(v=>v.imgUrl?.startsWith('data:'))||(o.imgUrl?.startsWith('data:'));
       if(hasImg)return false;
     }
-    if(missing==='titre'&&o.titre)return false;
+    if(missing==='ref'&&o.ref)return false;
     if(missing==='serie'&&o.serie)return false;
     if(missing==='statut'&&o.statut)return false;
     if(missing==='technique'&&o.technique)return false;
@@ -883,11 +915,15 @@ function render(){
 function buildDisplayList(src){
   const seen=new Set();const out=[];
   src.forEach(o=>{
-    if(!o.groupe){out.push({rep:o,members:[o],filteredIdx:filtered.indexOf(o)});return;}
-    if(seen.has(o.groupe))return;
-    seen.add(o.groupe);
-    const membersAll=oeuvres.filter(x=>x.groupe===o.groupe);
-    const rep=membersAll.find(x=>mainImg(x))||membersAll[0];
+    // Liaison par ref (JDP-xxx) si présent, sinon œuvre seule
+    const key=o.ref&&o.ref.trim()?o.ref.trim():null;
+    if(!key){out.push({rep:o,members:[o],filteredIdx:filtered.indexOf(o)});return;}
+    if(seen.has(key))return;
+    seen.add(key);
+    // Chercher tous les membres avec le même ref dans TOUS les oeuvres
+    const membersAll=oeuvres.filter(x=>x.ref&&x.ref.trim()===key);
+    // Principal = groupePrincipal:true, sinon premier avec image
+    const rep=membersAll.find(x=>x.groupePrincipal)||membersAll.find(x=>mainImg(x))||membersAll[0];
     out.push({rep,members:membersAll,filteredIdx:filtered.indexOf(rep)});
   });
   return out;
@@ -937,8 +973,9 @@ function countConsolidated(list){
   // Avant migration : dédupliquer par groupe
   const seen=new Set();let n=0;
   list.forEach(o=>{
-    if(!o.groupe){n++;return;}
-    if(!seen.has(o.groupe)){seen.add(o.groupe);n++;}
+    const key=o.ref&&o.ref.trim()?o.ref.trim():null;
+    if(!key){n++;return;}
+    if(!seen.has(key)){seen.add(key);n++;}
   });
   return n;
 }
@@ -1032,7 +1069,9 @@ function fillPanel(){
   document.getElementById('f-dossier').value=vue.dossier||'';
   document.getElementById('f-fichier').value=vue.fichier||'';
   document.getElementById('f-ref').value=o.ref||o.id||'';
-  document.getElementById('f-groupe').value=o.groupe||'';
+  document.getElementById('f-groupe').value=o.ref||'';
+  const cbGP=document.getElementById('f-groupe-principal');
+  if(cbGP) cbGP.checked=o.groupePrincipal===true;
   // Datalist groupes
   const dl=document.getElementById('groupes-list');dl.innerHTML='';
   [...new Set(oeuvres.map(x=>x.groupe).filter(Boolean))].sort()
@@ -1476,109 +1515,58 @@ window.handleFileImport=async input=>{
   input.value='';
 };
 
-// Génère vignette 300px depuis base64 HD
-function generateThumb(b64,maxW){
-  maxW=maxW||300;
-  return new Promise(function(resolve){
-    if(!b64){resolve('');return;}
-    var img=new Image();
-    img.onload=function(){
-      var r=Math.min(maxW/img.width,1);
-      var w=Math.round(img.width*r),h=Math.round(img.height*r);
-      var c=document.createElement('canvas');
-      c.width=w;c.height=h;
-      c.getContext('2d').drawImage(img,0,0,w,h);
-      resolve(c.toDataURL('image/jpeg',0.82));
-    };
-    img.onerror=function(){resolve('');};
-    img.src=b64;
-  });
-}
-
 async function importJSON(text){
-  var arr=JSON.parse(text);
-  var items=Array.isArray(arr)?arr:(arr.items||[]);
-  var progWrap=document.getElementById('import-progress');
-  var bar=document.getElementById('import-bar');
-  var label=document.getElementById('import-label');
+  const arr=JSON.parse(text);
+  const items=Array.isArray(arr)?arr:(arr.items||[]);
+  const progWrap=document.getElementById('import-progress');
+  const bar=document.getElementById('import-bar');
+  const label=document.getElementById('import-label');
   progWrap.style.display='block';setSyncState('saving');
-  var added=0,updated=0,skipped=0;
+  let added=0,updated=0;
 
-  // Détection format :
-  // - Storage : contient champ "hdUrl"
-  // - Ancien  : contient champ "imgUrl"
-  var first=items[0]||{};
-  var isStorage=('hdUrl' in first);
+  // Détecter si c'est un fichier drive-urls.json (contient imgHD)
+  const isDriveImport = items.length>0 && items[0].imgHD && !items[0].serie;
 
-  var BATCH=150;
-  for(var start=0;start<items.length;start+=BATCH){
-    var chunk=items.slice(start,start+BATCH);
-    var wb=writeBatch(fdb);
-    var ops=0;
-
-    for(var ci=0;ci<chunk.length;ci++){
-      var item=chunk[ci];
+  const BATCH=400;
+  for(let start=0;start<items.length;start+=BATCH){
+    const chunk=items.slice(start,start+BATCH);
+    const wb=writeBatch(fdb);
+    chunk.forEach((item,ci)=>{
       bar.style.width=Math.round(((start+ci+1)/items.length)*100)+'%';
-      label.textContent='Import '+(start+ci+1)+'/'+items.length+' — '+(item.fichier||'');
+      label.textContent=`Import ${start+ci+1}/${items.length} — ${item.fichier||''}`;
 
-      if(isStorage){
-        // Format Storage : thumb (base64 300px) + hdUrl (URL Storage)
-        // RÈGLE STRICTE : on ne met à jour QUE les documents existants
-        // On ne crée JAMAIS de nouveau document — évite tous les doublons
-        if(!item.fichier){skipped++;continue;}
-
-        var exists=oeuvres.find(function(o){
-          return o.fichier===item.fichier &&
-            (!item.dossier||!o.dossier||o.dossier===item.dossier);
-        });
-
-        if(exists){
+      if(isDriveImport){
+        // Mise à jour uniquement du champ imgHD par correspondance fichier+dossier
+        const existing=oeuvres.find(o=>
+          o.fichier===item.fichier &&
+          (o.dossier===item.dossier || !item.dossier)
+        );
+        if(existing){
+          wb.update(doc(fdb,'oeuvres',existing.id),{
+            imgHD:   item.imgHD,
+            driveId: item.driveId||''
+          });
           updated++;
-          if(item.thumb){
-            wb.update(doc(fdb,'oeuvres',exists.id),{imgUrl:item.thumb});
-            ops++;
-          }
-          if(item.hdUrl){
-            wb.set(doc(fdb,'images','hd_'+exists.id),{
-              oeuvreId:exists.id,
-              fichier:item.fichier,
-              vueIndex:0,
-              principale:true,
-              hdUrl:item.hdUrl,
-              hdW:item.hdW||0,
-            });
-            ops++;
-          }
-        } else {
-          skipped++;
         }
-
       } else {
-        // Ancien format imgUrl — comportement original
-        var obj=normalizeItem(item);
+        const obj=normalizeItem(item);
         if(obj.serie&&!series.includes(obj.serie)) series.push(obj.serie);
-        var ex=oeuvres.find(function(o){return o.fichier===obj.fichier;});
-        if(ex){
-          updated++;
-          wb.update(doc(fdb,'oeuvres',ex.id),{imgUrl:obj.vues[0]?obj.vues[0].imgUrl||'':''});
-          ops++;
-        } else {
-          added++;
-          var d2=obj;var id2=d2.id;delete d2.id;
-          wb.set(doc(fdb,'oeuvres',id2),d2);
-          ops++;
-        }
+        const exists=oeuvres.find(o=>o.fichier===obj.fichier);
+        if(exists)updated++;else added++;
+        const{id,...data}=obj;
+        wb.set(doc(fdb,'oeuvres',id),data);
       }
-
-      if(ops>=490){await wb.commit();ops=0;}
-    }
-    if(ops>0) await wb.commit();
+    });
+    await wb.commit();
   }
 
   await fsSetSeriesConfig();
   setSyncState('saved');
   progWrap.style.display='none';bar.style.width='0%';
-  toast('✓ '+updated+' mises à jour · '+added+' ajoutées · '+skipped+' ignorées');
+  if(isDriveImport)
+    toast(`✓ ${updated} URLs Google Drive liées aux œuvres`);
+  else
+    toast(`✓ ${added} ajoutées · ${updated} mises à jour`);
 }
 
 async function importCSVData(text){
@@ -1656,7 +1644,7 @@ function parseCSVLine(line){
 
 // ── EXPORT CSV ────────────────────────────────────────────────
 window.exportCSV=()=>{
-  const cols=['id','ref','fichier','dossier','serie','titre','annee','technique','hauteur','largeur','profondeur','prix','statut','localisation','notes'];
+  const cols=['id','ref','groupePrincipal','fichier','dossier','serie','titre','annee','technique','hauteur','largeur','profondeur','prix','statut','localisation','notes'];
   const csv='\uFEFF'+[cols.join(','),...oeuvres.map(o=>cols.map(c=>`"${(o[c]||'').toString().replace(/"/g,'""')}"`).join(','))].join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='inventaire-jdp.csv';a.click();
   toast('✓ CSV exporté — '+oeuvres.length+' œuvres');
@@ -2204,6 +2192,149 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='ArrowLeft'||e.key==='ArrowUp')panelNav(-1);
   else if(e.key==='Escape')closePanel();
 });
+
+// ── SUGGESTIONS D'ASSOCIATION ─────────────────────────────────
+// Suggère des groupes basés sur la similarité des noms de fichiers
+// + affiche les vignettes côte à côte pour validation visuelle
+
+function normalizeName(fichier){
+  // Supprimer extension, numéros finaux, copies, suffixes courants
+  return fichier
+    .replace(/\.[^.]+$/,'')          // extension
+    .replace(/\s*(copie|\d+)\s*$/i,'') // copie, numéro final
+    .replace(/[-_\s]+/g,' ')         // tirets/underscores → espace
+    .replace(/Julie de Pierrepont/i,'') // nom récurrent
+    .trim().toLowerCase();
+}
+
+function levenshtein(a,b){
+  const m=a.length,n=b.length;
+  const dp=Array.from({length:m+1},(_,i)=>Array.from({length:n+1},(_,j)=>i||j));
+  for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)
+    dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+  return dp[m][n];
+}
+
+function similarite(a,b){
+  const na=normalizeName(a), nb=normalizeName(b);
+  if(!na||!nb) return 0;
+  const maxLen=Math.max(na.length,nb.length);
+  if(maxLen===0) return 1;
+  // Similarité par Levenshtein + bonus si l'un contient l'autre
+  const lev=levenshtein(na,nb);
+  const score=1-lev/maxLen;
+  const contains=na.includes(nb)||nb.includes(na)?0.2:0;
+  return Math.min(1, score+contains);
+}
+
+window.openSuggestModal=()=>{
+  const SEUIL=0.55; // similarité minimale pour suggérer
+  const MAX_GROUPES=30;
+
+  // Ne comparer que les œuvres sans ref ou avec ref unique
+  const candidats=oeuvres.filter(o=>!o.ref||!o.ref.trim());
+  // + œuvres avec ref mais potentiellement mal groupées
+  const tous=oeuvres;
+
+  const groupes=[];
+  const vus=new Set();
+
+  tous.forEach(o=>{
+    if(vus.has(o.id)) return;
+    const similaires=tous.filter(x=>
+      x.id!==o.id &&
+      !vus.has(x.id) &&
+      similarite(o.fichier,x.fichier)>=SEUIL
+    );
+    if(similaires.length>0){
+      const groupe=[o,...similaires];
+      groupe.forEach(x=>vus.add(x.id));
+      groupes.push(groupe);
+    }
+  });
+
+  const container=document.getElementById('suggest-list');
+  container.innerHTML='';
+
+  if(!groupes.length){
+    container.innerHTML='<p style="color:var(--muted);font-size:11px;text-align:center;padding:20px">Aucune association suggérée — les noms de fichiers sont trop différents.</p>';
+    document.getElementById('modal-suggest').classList.add('open');
+    return;
+  }
+
+  groupes.slice(0,MAX_GROUPES).forEach((groupe,gi)=>{
+    const block=document.createElement('div');
+    block.style.cssText='background:var(--bg2);border:1px solid var(--border);padding:12px;border-radius:2px';
+
+    // Trouver un ref existant dans le groupe ou en proposer un nouveau
+    const existingRef=groupe.find(o=>o.ref)?.ref||'';
+    const suggestRef=existingRef||groupe[0].ref||'';
+
+    block.innerHTML=`
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <span style="font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase">Groupe ${gi+1}</span>
+        <input type="text" id="suggest-ref-${gi}" value="${suggestRef}"
+               placeholder="JDP-xxx à assigner"
+               style="padding:4px 8px;background:var(--bg);border:1px solid var(--border);font-family:monospace;font-size:11px;color:var(--gold);width:120px;outline:none">
+        <button class="btn btn-sm btn-gold" onclick="applySuggest(${gi})">✓ Assigner ce ref</button>
+        <span style="font-size:9px;color:var(--muted)">${groupe.length} photos similaires</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${groupe.map((o,i)=>`
+          <div style="text-align:center;max-width:110px">
+            <div style="position:relative">
+              ${o.imgUrl?`<img src="${o.imgUrl}" style="width:100px;height:80px;object-fit:cover;border:2px solid ${o.groupePrincipal?'var(--gold)':'var(--border)'};display:block">`
+                        :'<div style="width:100px;height:80px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:20px;opacity:.3">🖼</div>'}
+            </div>
+            <div style="font-size:9px;color:var(--muted);margin-top:3px;word-break:break-all;line-height:1.3">${o.fichier}</div>
+            <div style="font-size:9px;color:var(--gold)">${o.ref||'sans ref'}</div>
+            <label style="font-size:9px;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:3px;margin-top:2px">
+              <input type="radio" name="suggest-principal-${gi}" value="${o.id}" ${i===0?'checked':''}>
+              Principale
+            </label>
+          </div>
+        `).join('')}
+      </div>`;
+
+    // Stocker le groupe dans data pour applySuggest
+    block.dataset.groupe=JSON.stringify(groupe.map(o=>o.id));
+    block.id=`suggest-block-${gi}`;
+    container.appendChild(block);
+  });
+
+  if(groupes.length>MAX_GROUPES){
+    const more=document.createElement('p');
+    more.style.cssText='color:var(--muted);font-size:10px;text-align:center;padding:8px';
+    more.textContent=`... et ${groupes.length-MAX_GROUPES} autres groupes. Commence par ceux-ci puis relance.`;
+    container.appendChild(more);
+  }
+
+  document.getElementById('modal-suggest').classList.add('open');
+};
+
+window.applySuggest=async function(gi){
+  const block=document.getElementById(`suggest-block-${gi}`);
+  const ids=JSON.parse(block.dataset.groupe);
+  const ref=document.getElementById(`suggest-ref-${gi}`).value.trim();
+  const principalId=block.querySelector(`input[name="suggest-principal-${gi}"]:checked`)?.value||ids[0];
+
+  if(!ref){toast('Saisis un JDP-xxx avant d\'assigner',true);return;}
+
+  const wb=writeBatch(fdb);
+  ids.forEach(id=>{
+    wb.update(doc(fdb,'oeuvres',id),{
+      ref,
+      groupePrincipal: id===principalId,
+    });
+  });
+  await wb.commit();
+
+  // Marquer le bloc comme traité
+  block.style.opacity='0.4';
+  block.style.pointerEvents='none';
+  block.querySelector('button').textContent='✓ Assigné';
+  toast(`✓ ref ${ref} assigné à ${ids.length} photos`);
+};
 
 </script>
 </body>
