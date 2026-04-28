@@ -357,8 +357,8 @@ main.panel-open{margin-right:var(--panel-w)}
   </div>
   <div class="toolbar-right">
     <span class="count-badge" id="count-badge">—</span>
-    <button class="btn btn-sm" onclick="openSuggestModal()" title="Suggérer des associations par similarité de nom">⊞ Suggestions</button>
-    <button class="btn btn-sm" onclick="openReorderModal()" title="Réassigner les refs JDP-xxx dans l'ordre chronologique">↕ Réordonner refs</button>
+    <button class="btn btn-sm" onclick="openSuggestModal()" title="Suggérer des associations par similarité">⊞ Suggestions</button>
+    <button class="btn btn-sm" onclick="openReorderModal()" title="Réassigner les refs dans l'ordre chronologique">↕ Réordonner refs</button>
     <div class="view-toggle">
       <button class="view-btn active" id="btn-grid" onclick="setView('grid')">⊞</button>
       <button class="view-btn" id="btn-list" onclick="setView('list')">☰</button>
@@ -695,45 +695,6 @@ main.panel-open{margin-right:var(--panel-w)}
 
 <div id="toast"></div>
 
-<!-- MODAL RÉORDONNANCEMENT REFS -->
-<div class="modal-overlay" id="modal-reorder">
-  <div class="modal" style="width:560px;max-width:96vw">
-    <div class="modal-header">
-      <span class="modal-title">↕ Réassigner refs en ordre chronologique</span>
-      <button class="btn btn-sm panel-close" onclick="closeModal('modal-reorder')">✕</button>
-    </div>
-    <div class="modal-body">
-      <p style="font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.7">
-        Réassigne les numéros JDP-xxx dans l'ordre chronologique (année puis titre).<br>
-        <strong style="color:var(--gold)">Attention :</strong> tous les refs existants seront remplacés. À utiliser une fois que tous les champs <em>année</em> sont renseignés.
-      </p>
-      <div id="reorder-preview" style="max-height:50vh;overflow-y:auto;font-size:11px"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeModal('modal-reorder')">Annuler</button>
-      <button class="btn btn-gold" onclick="applyReorder()">↕ Appliquer la réassignation</button>
-    </div>
-  </div>
-</div>
-<div class="modal-overlay" id="modal-suggest">
-  <div class="modal" style="width:720px;max-width:96vw">
-    <div class="modal-header">
-      <span class="modal-title">⊞ Suggestions d'association</span>
-      <button class="btn btn-sm panel-close" onclick="closeModal('modal-suggest')">✕</button>
-    </div>
-    <div class="modal-body">
-      <p style="font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.7">
-        Les œuvres ci-dessous partagent un nom de fichier similaire — elles sont probablement des vues différentes d'une même pièce.<br>
-        Cliquez sur un groupe pour assigner le même JDP-xxx et marquer la photo principale.
-      </p>
-      <div id="suggest-list" style="display:flex;flex-direction:column;gap:16px;max-height:60vh;overflow-y:auto"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeModal('modal-suggest')">Fermer</button>
-    </div>
-  </div>
-</div>
-
 <!-- ══════════════════════════════════════════════════════
      FIREBASE — accès public (pas d'authentification)
 ══════════════════════════════════════════════════════ -->
@@ -936,14 +897,11 @@ function render(){
 function buildDisplayList(src){
   const seen=new Set();const out=[];
   src.forEach(o=>{
-    // Liaison par ref (JDP-xxx) si présent, sinon œuvre seule
     const key=o.ref&&o.ref.trim()?o.ref.trim():null;
     if(!key){out.push({rep:o,members:[o],filteredIdx:filtered.indexOf(o)});return;}
     if(seen.has(key))return;
     seen.add(key);
-    // Chercher tous les membres avec le même ref dans TOUS les oeuvres
     const membersAll=oeuvres.filter(x=>x.ref&&x.ref.trim()===key);
-    // Principal = groupePrincipal:true, sinon premier avec image
     const rep=membersAll.find(x=>x.groupePrincipal)||membersAll.find(x=>mainImg(x))||membersAll[0];
     out.push({rep,members:membersAll,filteredIdx:filtered.indexOf(rep)});
   });
@@ -1536,58 +1494,82 @@ window.handleFileImport=async input=>{
   input.value='';
 };
 
+// Génère vignette 300px depuis base64
+function generateThumb(b64,maxW){
+  maxW=maxW||300;
+  return new Promise(function(resolve){
+    if(!b64){resolve('');return;}
+    var img=new Image();
+    img.onload=function(){
+      var r=Math.min(maxW/img.width,1);
+      var w=Math.round(img.width*r),h=Math.round(img.height*r);
+      var c=document.createElement('canvas');
+      c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(c.toDataURL('image/jpeg',0.82));
+    };
+    img.onerror=function(){resolve('');};
+    img.src=b64;
+  });
+}
+
 async function importJSON(text){
-  const arr=JSON.parse(text);
-  const items=Array.isArray(arr)?arr:(arr.items||[]);
-  const progWrap=document.getElementById('import-progress');
-  const bar=document.getElementById('import-bar');
-  const label=document.getElementById('import-label');
+  var arr=JSON.parse(text);
+  var items=Array.isArray(arr)?arr:(arr.items||[]);
+  var progWrap=document.getElementById('import-progress');
+  var bar=document.getElementById('import-bar');
+  var label=document.getElementById('import-label');
   progWrap.style.display='block';setSyncState('saving');
-  let added=0,updated=0;
+  var added=0,updated=0,skipped=0;
+  var first=items[0]||{};
+  var isStorage=('hdUrl' in first);
 
-  // Détecter si c'est un fichier drive-urls.json (contient imgHD)
-  const isDriveImport = items.length>0 && items[0].imgHD && !items[0].serie;
-
-  const BATCH=400;
-  for(let start=0;start<items.length;start+=BATCH){
-    const chunk=items.slice(start,start+BATCH);
-    const wb=writeBatch(fdb);
-    chunk.forEach((item,ci)=>{
-      bar.style.width=Math.round(((start+ci+1)/items.length)*100)+'%';
-      label.textContent=`Import ${start+ci+1}/${items.length} — ${item.fichier||''}`;
-
-      if(isDriveImport){
-        // Mise à jour uniquement du champ imgHD par correspondance fichier+dossier
-        const existing=oeuvres.find(o=>
-          o.fichier===item.fichier &&
-          (o.dossier===item.dossier || !item.dossier)
-        );
-        if(existing){
-          wb.update(doc(fdb,'oeuvres',existing.id),{
-            imgHD:   item.imgHD,
-            driveId: item.driveId||''
-          });
+  var BATCH=150;
+  for(var iStart=0;iStart<items.length;iStart+=BATCH){
+    var chunk=items.slice(iStart,iStart+BATCH);
+    var wb=writeBatch(fdb);
+    var ops=0;
+    for(var ci=0;ci<chunk.length;ci++){
+      var item=chunk[ci];
+      bar.style.width=Math.round(((iStart+ci+1)/items.length)*100)+'%';
+      label.textContent='Import '+(iStart+ci+1)+'/'+items.length+' — '+(item.fichier||'');
+      if(isStorage){
+        if(!item.fichier){skipped++;continue;}
+        var exists=oeuvres.find(function(o){
+          return o.fichier===item.fichier&&(!item.dossier||!o.dossier||o.dossier===item.dossier);
+        });
+        if(exists){
           updated++;
-        }
+          if(item.thumb){wb.update(doc(fdb,'oeuvres',exists.id),{imgUrl:item.thumb});ops++;}
+          if(item.hdUrl){
+            wb.set(doc(fdb,'images','hd_'+exists.id),{
+              oeuvreId:exists.id,fichier:item.fichier,
+              vueIndex:0,principale:true,hdUrl:item.hdUrl,hdW:item.hdW||0,
+            });ops++;
+          }
+        } else {skipped++;}
       } else {
-        const obj=normalizeItem(item);
+        var obj=normalizeItem(item);
         if(obj.serie&&!series.includes(obj.serie)) series.push(obj.serie);
-        const exists=oeuvres.find(o=>o.fichier===obj.fichier);
-        if(exists)updated++;else added++;
-        const{id,...data}=obj;
-        wb.set(doc(fdb,'oeuvres',id),data);
+        var ex=oeuvres.find(function(o){return o.fichier===obj.fichier;});
+        if(ex){
+          updated++;
+          wb.update(doc(fdb,'oeuvres',ex.id),{imgUrl:(obj.vues&&obj.vues[0])?obj.vues[0].imgUrl||'':''});
+          ops++;
+        } else {
+          added++;
+          var d2=Object.assign({},obj);var id2=d2.id;delete d2.id;
+          wb.set(doc(fdb,'oeuvres',id2),d2);ops++;
+        }
       }
-    });
-    await wb.commit();
+      if(ops>=490){await wb.commit();ops=0;}
+    }
+    if(ops>0) await wb.commit();
   }
-
   await fsSetSeriesConfig();
   setSyncState('saved');
   progWrap.style.display='none';bar.style.width='0%';
-  if(isDriveImport)
-    toast(`✓ ${updated} URLs Google Drive liées aux œuvres`);
-  else
-    toast(`✓ ${added} ajoutées · ${updated} mises à jour`);
+  toast('✓ '+updated+' mises à jour · '+added+' ajoutées · '+skipped+' ignorées');
 }
 
 async function importCSVData(text){
@@ -1923,6 +1905,47 @@ function filterSerie(btn,serie){
   document.getElementById('total-count').textContent=n;
 }
 <\/script>
+
+<!-- MODAL RÉORDONNANCEMENT -->
+<div class="modal-overlay" id="modal-reorder">
+  <div class="modal" style="width:560px;max-width:96vw">
+    <div class="modal-header">
+      <span class="modal-title">↕ Réassigner refs en ordre chronologique</span>
+      <button class="btn btn-sm panel-close" onclick="closeModal('modal-reorder')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.7">
+        Réassigne les numéros JDP-xxx dans l'ordre chronologique (année puis titre).
+        <strong style="color:var(--gold)">Attention :</strong> tous les refs existants seront remplacés.
+      </p>
+      <div id="reorder-preview" style="max-height:50vh;overflow-y:auto;font-size:11px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-reorder')">Annuler</button>
+      <button class="btn btn-gold" onclick="applyReorder()">↕ Appliquer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL SUGGESTIONS -->
+<div class="modal-overlay" id="modal-suggest">
+  <div class="modal" style="width:720px;max-width:96vw">
+    <div class="modal-header">
+      <span class="modal-title">⊞ Suggestions d'association</span>
+      <button class="btn btn-sm panel-close" onclick="closeModal('modal-suggest')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.7">
+        Œuvres avec noms de fichiers similaires — probablement des vues d'une même pièce.
+      </p>
+      <div id="suggest-list" style="display:flex;flex-direction:column;gap:16px;max-height:60vh;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-suggest')">Fermer</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>`;
 
@@ -2214,182 +2237,111 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='Escape')closePanel();
 });
 
-// ── SUGGESTIONS D'ASSOCIATION ─────────────────────────────────
-// Suggère des groupes basés sur la similarité des noms de fichiers
-// + affiche les vignettes côte à côte pour validation visuelle
 
-function normalizeName(fichier){
-  // Supprimer extension, numéros finaux, copies, suffixes courants
-  return fichier
-    .replace(/\.[^.]+$/,'')          // extension
-    .replace(/\s*(copie|\d+)\s*$/i,'') // copie, numéro final
-    .replace(/[-_\s]+/g,' ')         // tirets/underscores → espace
-    .replace(/Julie de Pierrepont/i,'') // nom récurrent
-    .trim().toLowerCase();
+// ── SUGGESTIONS ET RÉORDONNANCEMENT ──────────────────────────
+
+function normalizeName(f){
+  return f.replace(/\.[^.]+$/,'').replace(/\s*(copie|\d+)\s*$/i,'')
+          .replace(/[-_\s]+/g,' ').replace(/Julie de Pierrepont/i,'')
+          .trim().toLowerCase();
 }
-
 function levenshtein(a,b){
   const m=a.length,n=b.length;
   const dp=Array.from({length:m+1},(_,i)=>Array.from({length:n+1},(_,j)=>i||j));
-  for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)
+  for(let i=1;i<=m;i++) for(let j=1;j<=n;j++)
     dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
   return dp[m][n];
 }
-
 function similarite(a,b){
-  const na=normalizeName(a), nb=normalizeName(b);
+  const na=normalizeName(a),nb=normalizeName(b);
   if(!na||!nb) return 0;
   const maxLen=Math.max(na.length,nb.length);
-  if(maxLen===0) return 1;
-  // Similarité par Levenshtein + bonus si l'un contient l'autre
-  const lev=levenshtein(na,nb);
-  const score=1-lev/maxLen;
+  const score=1-levenshtein(na,nb)/maxLen;
   const contains=na.includes(nb)||nb.includes(na)?0.2:0;
-  return Math.min(1, score+contains);
+  return Math.min(1,score+contains);
 }
 
 window.openSuggestModal=()=>{
-  const SEUIL=0.55;
-  const MAX_GROUPES=30;
-
-  // Calculer le prochain ref disponible
-  const usedRefs=new Set(oeuvres.map(o=>o.ref).filter(Boolean));
-  let nextNum=1;
-  while(usedRefs.has(`JDP-${String(nextNum).padStart(4,'0')}`)) nextNum++;
-
-  function nextAvailableRef(){
-    while(usedRefs.has(`JDP-${String(nextNum).padStart(4,'0')}`)) nextNum++;
-    const ref=`JDP-${String(nextNum).padStart(4,'0')}`;
-    usedRefs.add(ref); // réserver pour le groupe suivant
-    nextNum++;
-    return ref;
+  const SEUIL=0.55,MAX=30;
+  const used=new Set(oeuvres.map(o=>o.ref).filter(Boolean));
+  let n=1;
+  function nextRef(){
+    while(used.has('JDP-'+String(n).padStart(4,'0'))) n++;
+    const r='JDP-'+String(n).padStart(4,'0');
+    used.add(r);n++;return r;
   }
-
-  const tous=oeuvres;
-  const groupes=[];
-  const vus=new Set();
-
-  tous.forEach(o=>{
+  const vus=new Set();const groupes=[];
+  oeuvres.forEach(o=>{
     if(vus.has(o.id)) return;
-    const similaires=tous.filter(x=>
-      x.id!==o.id &&
-      !vus.has(x.id) &&
-      similarite(o.fichier,x.fichier)>=SEUIL
-    );
-    if(similaires.length>0){
-      const groupe=[o,...similaires];
-      groupe.forEach(x=>vus.add(x.id));
-      groupes.push(groupe);
-    }
+    const sims=oeuvres.filter(x=>x.id!==o.id&&!vus.has(x.id)&&similarite(o.fichier,x.fichier)>=SEUIL);
+    if(sims.length){const g=[o,...sims];g.forEach(x=>vus.add(x.id));groupes.push(g);}
   });
-
-  const container=document.getElementById('suggest-list');
-  container.innerHTML='';
-
+  const c=document.getElementById('suggest-list');
+  c.innerHTML='';
   if(!groupes.length){
-    container.innerHTML='<p style="color:var(--muted);font-size:11px;text-align:center;padding:20px">Aucune association suggérée.</p>';
-    document.getElementById('modal-suggest').classList.add('open');
-    return;
+    c.innerHTML='<p style="color:var(--muted);font-size:11px;text-align:center;padding:20px">Aucune association suggérée.</p>';
+    document.getElementById('modal-suggest').classList.add('open');return;
   }
-
-  groupes.slice(0,MAX_GROUPES).forEach((groupe,gi)=>{
+  groupes.slice(0,MAX).forEach((groupe,gi)=>{
+    const existing=groupe.find(o=>o.ref)?.ref||'';
+    const proposed=existing||nextRef();
     const block=document.createElement('div');
-    block.style.cssText='background:var(--bg2);border:1px solid var(--border);padding:12px;border-radius:2px';
-
-    // Ref existant dans le groupe ou prochain disponible
-    const existingRef=groupe.find(o=>o.ref)?.ref||'';
-    const proposedRef=existingRef||nextAvailableRef();
-
-    block.innerHTML=`
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-        <span style="font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase">Groupe ${gi+1}</span>
-        <input type="text" id="suggest-ref-${gi}" value="${proposedRef}"
-               placeholder="JDP-xxx"
-               style="padding:4px 8px;background:var(--bg);border:1px solid var(--border);font-family:monospace;font-size:11px;color:var(--gold);width:110px;outline:none">
-        <button class="btn btn-sm btn-gold" onclick="applySuggest(${gi})">✓ Assigner</button>
-        <button class="btn btn-sm" onclick="skipSuggest(${gi})" style="color:var(--muted)">✗ Ignorer</button>
-        <span style="font-size:9px;color:var(--muted)">${groupe.length} photos · ${existingRef?'ref existante':'ref proposée'}</span>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${groupe.map((o,i)=>`
-          <div style="text-align:center;max-width:110px">
-            ${o.imgUrl
-              ?`<img src="${o.imgUrl}" style="width:100px;height:80px;object-fit:cover;border:2px solid ${o.groupePrincipal?'var(--gold)':'var(--border)'};display:block">`
-              :'<div style="width:100px;height:80px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:20px;opacity:.3">🖼</div>'}
-            <div style="font-size:9px;color:var(--muted);margin-top:3px;word-break:break-all;line-height:1.3">${o.fichier}</div>
-            <div style="font-size:9px;color:${o.ref?'var(--gold)':'var(--muted)'}">${o.ref||'sans ref'}</div>
-            <label style="font-size:9px;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:3px;margin-top:2px">
-              <input type="radio" name="suggest-principal-${gi}" value="${o.id}" ${i===0?'checked':''}>
-              Principale
-            </label>
-          </div>
-        `).join('')}
-      </div>`;
-
+    block.style.cssText='background:var(--bg2);border:1px solid var(--border);padding:12px';
+    block.id='suggest-block-'+gi;
     block.dataset.groupe=JSON.stringify(groupe.map(o=>o.id));
-    block.id=`suggest-block-${gi}`;
-    container.appendChild(block);
+    block.innerHTML=
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">'+
+        '<span style="font-size:9px;color:var(--muted);text-transform:uppercase">Groupe '+(gi+1)+'</span>'+
+        '<input type="text" id="suggest-ref-'+gi+'" value="'+proposed+'" placeholder="JDP-xxx" '+
+               'style="padding:4px 8px;background:var(--bg);border:1px solid var(--border);font-family:monospace;font-size:11px;color:var(--gold);width:110px;outline:none">'+
+        '<button class="btn btn-sm btn-gold" onclick="applySuggest('+gi+')">✓ Assigner</button>'+
+        '<button class="btn btn-sm" onclick="skipSuggest('+gi+')" style="color:var(--muted)">✗ Ignorer</button>'+
+        '<span style="font-size:9px;color:var(--muted)">'+groupe.length+' photos</span>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      groupe.map((o,i)=>
+        '<div style="text-align:center;max-width:110px">'+
+          (o.imgUrl?'<img src="'+o.imgUrl+'" style="width:100px;height:80px;object-fit:cover;border:2px solid '+(o.groupePrincipal?'var(--gold)':'var(--border)')+'">':
+                    '<div style="width:100px;height:80px;background:var(--surface);display:flex;align-items:center;justify-content:center;opacity:.3">🖼</div>')+
+          '<div style="font-size:9px;color:var(--muted);margin-top:3px;word-break:break-all;line-height:1.3">'+o.fichier+'</div>'+
+          '<div style="font-size:9px;color:'+(o.ref?'var(--gold)':'var(--muted)')+'">'+( o.ref||'sans ref')+'</div>'+
+          '<label style="font-size:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:3px;margin-top:2px">'+
+            '<input type="radio" name="suggest-principal-'+gi+'" value="'+o.id+'" '+(i===0?'checked':'')+'>Principale'+
+          '</label>'+
+        '</div>'
+      ).join('')+
+      '</div>';
+    c.appendChild(block);
   });
-
-  if(groupes.length>MAX_GROUPES){
-    const more=document.createElement('p');
-    more.style.cssText='color:var(--muted);font-size:10px;text-align:center;padding:8px';
-    more.textContent=`... et ${groupes.length-MAX_GROUPES} autres groupes. Relance après avoir traité ceux-ci.`;
-    container.appendChild(more);
+  if(groupes.length>MAX){
+    const m=document.createElement('p');
+    m.style.cssText='color:var(--muted);font-size:10px;text-align:center;padding:8px';
+    m.textContent='... et '+(groupes.length-MAX)+' autres. Relance après avoir traité ceux-ci.';
+    c.appendChild(m);
   }
-
   document.getElementById('modal-suggest').classList.add('open');
 };
 
 window.skipSuggest=function(gi){
-  const block=document.getElementById(`suggest-block-${gi}`);
-  block.style.opacity='0.3';
-  block.style.pointerEvents='none';
+  const b=document.getElementById('suggest-block-'+gi);
+  b.style.opacity='0.3';b.style.pointerEvents='none';
 };
 
 window.applySuggest=async function(gi){
-  const block=document.getElementById(`suggest-block-${gi}`);
+  const block=document.getElementById('suggest-block-'+gi);
   const ids=JSON.parse(block.dataset.groupe);
-  const ref=document.getElementById(`suggest-ref-${gi}`).value.trim();
-  const principalId=block.querySelector(`input[name="suggest-principal-${gi}"]:checked`)?.value||ids[0];
+  const ref=document.getElementById('suggest-ref-'+gi).value.trim();
+  const radio=block.querySelector('input[name="suggest-principal-'+gi+'"]:checked');
+  const principalId=radio?radio.value:ids[0];
   if(!ref){toast("Saisis un JDP-xxx avant d'assigner",true);return;}
   const wb=writeBatch(fdb);
-  ids.forEach(id=>{
-    wb.update(doc(fdb,'oeuvres',id),{
-      ref,
-      groupePrincipal: id===principalId,
-    });
-  });
+  ids.forEach(id=>{wb.update(doc(fdb,'oeuvres',id),{ref,groupePrincipal:id===principalId});});
   await wb.commit();
-  block.style.opacity='0.4';
-  block.style.pointerEvents='none';
+  block.style.opacity='0.4';block.style.pointerEvents='none';
   block.querySelector('button').textContent='✓ Assigné';
-  toast(`✓ ref ${ref} assigné à ${ids.length} photos`);
-};
-  const block=document.getElementById(`suggest-block-${gi}`);
-  const ids=JSON.parse(block.dataset.groupe);
-  const ref=document.getElementById(`suggest-ref-${gi}`).value.trim();
-  const principalId=block.querySelector(`input[name="suggest-principal-${gi}"]:checked`)?.value||ids[0];
-
-  if(!ref){toast("Saisis un JDP-xxx avant d'assigner",true);return;}
-
-  const wb=writeBatch(fdb);
-  ids.forEach(id=>{
-    wb.update(doc(fdb,'oeuvres',id),{
-      ref,
-      groupePrincipal: id===principalId,
-    });
-  });
-  await wb.commit();
-
-  // Marquer le bloc comme traité
-  block.style.opacity='0.4';
-  block.style.pointerEvents='none';
-  block.querySelector('button').textContent='✓ Assigné';
-  toast(`✓ ref ${ref} assigné à ${ids.length} photos`);
+  toast('✓ ref '+ref+' assigné à '+ids.length+' photos');
 };
 
-// ── RÉORDONNANCEMENT CHRONOLOGIQUE DES REFS ──────────────────
 window.openReorderModal=()=>{
   const groupes=new Map();
   oeuvres.forEach(o=>{
@@ -2397,65 +2349,51 @@ window.openReorderModal=()=>{
     if(!groupes.has(key)) groupes.set(key,[]);
     groupes.get(key).push(o);
   });
-
   const sorted=[...groupes.entries()].sort(([,a],[,b])=>{
-    const repA=a.find(x=>x.groupePrincipal)||a[0];
-    const repB=b.find(x=>x.groupePrincipal)||b[0];
-    const yearA=parseInt(repA.annee)||9999;
-    const yearB=parseInt(repB.annee)||9999;
-    if(yearA!==yearB) return yearA-yearB;
-    return (repA.titre||repA.fichier||'').localeCompare(repB.titre||repB.fichier||'');
+    const rA=a.find(x=>x.groupePrincipal)||a[0];
+    const rB=b.find(x=>x.groupePrincipal)||b[0];
+    const yA=parseInt(rA.annee)||9999,yB=parseInt(rB.annee)||9999;
+    if(yA!==yB) return yA-yB;
+    return (rA.titre||rA.fichier||'').localeCompare(rB.titre||rB.fichier||'');
   });
-
   let n=1;
-  const plan=sorted.map(([oldRef,members])=>{
-    const newRef=`JDP-${String(n).padStart(4,'0')}`;
-    n++;
+  const plan=sorted.map(([old,members])=>{
+    const newRef='JDP-'+String(n++).padStart(4,'0');
     const rep=members.find(x=>x.groupePrincipal)||members[0];
-    return {oldRef:oldRef.startsWith('__')?'(sans ref)':oldRef, newRef, members, rep};
+    return {oldRef:old.startsWith('__')?'(sans ref)':old,newRef,members,rep};
   });
-
-  const preview=document.getElementById('reorder-preview');
-  preview.innerHTML='<table style="width:100%;border-collapse:collapse">'+
-    '<tr>'+
-    '<th style="padding:4px 8px;text-align:left;color:var(--muted);background:var(--bg2);font-size:9px">Ancien ref</th>'+
-    '<th style="padding:4px 8px;text-align:left;color:var(--muted);background:var(--bg2);font-size:9px">Nouveau ref</th>'+
-    '<th style="padding:4px 8px;text-align:left;color:var(--muted);background:var(--bg2);font-size:9px">Année</th>'+
-    '<th style="padding:4px 8px;text-align:left;color:var(--muted);background:var(--bg2);font-size:9px">Titre / Fichier</th>'+
-    '</tr>'+
+  const prev=document.getElementById('reorder-preview');
+  prev.innerHTML='<table style="width:100%;border-collapse:collapse">'+
+    '<tr><th style="padding:4px 8px;background:var(--bg2);color:var(--muted);font-size:9px;text-align:left">Ancien</th>'+
+    '<th style="padding:4px 8px;background:var(--bg2);color:var(--muted);font-size:9px;text-align:left">Nouveau</th>'+
+    '<th style="padding:4px 8px;background:var(--bg2);color:var(--muted);font-size:9px;text-align:left">Année</th>'+
+    '<th style="padding:4px 8px;background:var(--bg2);color:var(--muted);font-size:9px;text-align:left">Titre</th></tr>'+
     plan.map(p=>'<tr style="border-bottom:1px solid var(--border)">'+
       '<td style="padding:4px 8px;font-family:monospace;font-size:10px;color:var(--muted)">'+p.oldRef+'</td>'+
       '<td style="padding:4px 8px;font-family:monospace;font-size:10px;color:var(--gold)">'+p.newRef+'</td>'+
       '<td style="padding:4px 8px;font-size:10px">'+(p.rep.annee||'—')+'</td>'+
       '<td style="padding:4px 8px;font-size:10px">'+(p.rep.titre||p.rep.fichier||'—')+'</td>'+
-    '</tr>').join('')+
-    '</table>';
-
-  preview.dataset.plan=JSON.stringify(plan.map(p=>({
-    newRef:p.newRef,
-    ids:p.members.map(o=>o.id)
-  })));
-
+    '</tr>').join('')+'</table>';
+  prev.dataset.plan=JSON.stringify(plan.map(p=>({newRef:p.newRef,ids:p.members.map(o=>o.id)})));
   document.getElementById('modal-reorder').classList.add('open');
 };
 
 window.applyReorder=async function(){
-  const preview=document.getElementById('reorder-preview');
-  const plan=JSON.parse(preview.dataset.plan||'[]');
+  const prev=document.getElementById('reorder-preview');
+  const plan=JSON.parse(prev.dataset.plan||'[]');
   if(!plan.length){toast('Rien à réordonner',true);return;}
   setSyncState('saving');
   let updated=0;
   for(let i=0;i<plan.length;i+=400){
-    const chunk=plan.slice(i,i+400);
     const wb=writeBatch(fdb);
-    chunk.forEach(({newRef,ids})=>{
+    plan.slice(i,i+400).forEach(({newRef,ids})=>{
       ids.forEach(id=>{wb.update(doc(fdb,'oeuvres',id),{ref:newRef});updated++;});
     });
     await wb.commit();
   }
   setSyncState('saved');
   closeModal('modal-reorder');
-  toast('✓ '+updated+' œuvres renumérotées en ordre chronologique');
+  toast('✓ '+updated+' œuvres renumérotées');
 };
 
 </script>
