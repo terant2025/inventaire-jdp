@@ -698,6 +698,46 @@ main.panel-open{margin-right:var(--panel-w)}
 <!-- ══════════════════════════════════════════════════════
      FIREBASE — accès public (pas d'authentification)
 ══════════════════════════════════════════════════════ -->
+
+<div class="modal-overlay" id="modal-reorder">
+  <div class="modal" style="width:560px;max-width:96vw">
+    <div class="modal-header">
+      <span class="modal-title">↕ Réassigner refs en ordre chronologique</span>
+      <button class="btn btn-sm panel-close" onclick="closeModal('modal-reorder')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.7">
+        Réassigne les numéros JDP-xxx dans l'ordre chronologique (année puis titre).
+        <strong style="color:var(--gold)">Attention :</strong> tous les refs existants seront remplacés.
+      </p>
+      <div id="reorder-preview" style="max-height:50vh;overflow-y:auto;font-size:11px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-reorder')">Annuler</button>
+      <button class="btn btn-gold" onclick="applyReorder()">↕ Appliquer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL SUGGESTIONS -->
+<div class="modal-overlay" id="modal-suggest">
+  <div class="modal" style="width:720px;max-width:96vw">
+    <div class="modal-header">
+      <span class="modal-title">⊞ Suggestions d'association</span>
+      <button class="btn btn-sm panel-close" onclick="closeModal('modal-suggest')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.7">
+        Œuvres avec noms de fichiers similaires — probablement des vues d'une même pièce.
+      </p>
+      <div id="suggest-list" style="display:flex;flex-direction:column;gap:16px;max-height:60vh;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-suggest')">Fermer</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp }   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getFirestore, collection, doc, setDoc, onSnapshot, writeBatch, getDocs, deleteDoc }
@@ -1843,7 +1883,7 @@ ${cartes}
 </main>
 <footer class="site-footer">Julie de Pierrepont — Art Textile Contemporain · ${new Date().getFullYear()}</footer>
 
-<!-- LIGHTBOX -->
+
 <div id="lb">
   <button id="lb-close" onclick="closeLightbox()">✕</button>
   <div id="lb-counter"></div>
@@ -1906,47 +1946,6 @@ function filterSerie(btn,serie){
 }
 <\/script>
 
-<!-- MODAL RÉORDONNANCEMENT -->
-<div class="modal-overlay" id="modal-reorder">
-  <div class="modal" style="width:560px;max-width:96vw">
-    <div class="modal-header">
-      <span class="modal-title">↕ Réassigner refs en ordre chronologique</span>
-      <button class="btn btn-sm panel-close" onclick="closeModal('modal-reorder')">✕</button>
-    </div>
-    <div class="modal-body">
-      <p style="font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.7">
-        Réassigne les numéros JDP-xxx dans l'ordre chronologique (année puis titre).
-        <strong style="color:var(--gold)">Attention :</strong> tous les refs existants seront remplacés.
-      </p>
-      <div id="reorder-preview" style="max-height:50vh;overflow-y:auto;font-size:11px"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeModal('modal-reorder')">Annuler</button>
-      <button class="btn btn-gold" onclick="applyReorder()">↕ Appliquer</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL SUGGESTIONS -->
-<div class="modal-overlay" id="modal-suggest">
-  <div class="modal" style="width:720px;max-width:96vw">
-    <div class="modal-header">
-      <span class="modal-title">⊞ Suggestions d'association</span>
-      <button class="btn btn-sm panel-close" onclick="closeModal('modal-suggest')">✕</button>
-    </div>
-    <div class="modal-body">
-      <p style="font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.7">
-        Œuvres avec noms de fichiers similaires — probablement des vues d'une même pièce.
-      </p>
-      <div id="suggest-list" style="display:flex;flex-direction:column;gap:16px;max-height:60vh;overflow-y:auto"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeModal('modal-suggest')">Fermer</button>
-    </div>
-  </div>
-</div>
-
-</body>
 </html>`;
 
   const blob=new Blob([html],{type:'text/html;charset=utf-8'});
@@ -2396,6 +2395,7 @@ window.applyReorder=async function(){
   toast('✓ '+updated+' œuvres renumérotées');
 };
 
+
+
 </script>
 </body>
-</html>
